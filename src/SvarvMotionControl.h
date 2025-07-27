@@ -340,7 +340,7 @@ struct SvarvPlatformConfig {
 
     // ESP32 specific
     int esp32_tx_pin = 21;
-    int esp32_rx_pin = 20;
+    int esp32_rx_pin = 22;
 
     // STM32 specific
     int stm32_can_instance = 1;  // CAN1 or CAN2
@@ -953,7 +953,7 @@ public:
      * @param max_motors Maximum number of motors to configure
      * @return Number of motors successfully configured
      */
-    int autoConfigureMotors(uint8_t start_id = 1, uint8_t max_motors = 10);
+    bool configureSingleMotor(uint8_t target_id);
 
 
     std::vector<uint8_t> scanForUnconfiguredMotors(unsigned long timeout_ms = 8000);
