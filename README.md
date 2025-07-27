@@ -1,4 +1,147 @@
-# Svarv Motion Control Library
+### Motor Discovery & Auto-Configuration
+
+```cpp
+// Scan for motors on the CAN bus
+auto discovered = svarv.scanForMotors(5000); // 5 second timeout
+
+Serial.println("Found " + String(discovered.size()) + " motors:");
+for (uint8_t nodeId : discovered) {
+  Serial.println("  - Motor " + String(nodeId));
+}
+
+// Auto-configure unconfigured motors (node ID = 0)
+int configured = svarv.autoConfigureMotors(1, 10); // Start from ID 1, max 10 motors
+Serial.println("Configured " + String(configured) + " motors");
+```
+
+### Node ID Configuration
+
+Setting up Node IDs for new or unconfigured motors:
+
+```cpp
+// Configure a single unconfigured motor (Node ID = 0)
+void setupNewMotor() {
+  Serial.println("Setting up new motor with Node ID 1...");
+  
+  if (svarv.setMotorNodeId(0, 1)) { // From unconfigured (0) to Node ID 1
+    delay(1000); // Wait for motor to reconfigure
+    
+    // Verify the new motor responds
+    SvarvMotor& motor = svarv.addMotor(1);
+    if (motor.isConnected()) {
+      Serial.println("✅ Motor configured successfully!");
+      motor.saveConfig(); // Save to EEPROM
+    }
+  }
+}
+
+// Change existing motor's Node ID
+void changeMotorNodeId(uint8_t currentId, uint8_t newId) {
+  if (svarv.setMotorNodeId(currentId, newId)) {
+    Serial.println("Node ID changed from " + String(currentId) + " to " + String(newId));
+    
+    // Update motor in system
+    svarv.removeMotor(currentId);
+    SvarvMotor& motor = svarv.addMotor(newId);
+    motor.saveConfig();
+  }
+}
+
+// Bulk configuration example
+void setupMultipleMotors() {
+  Serial.println("Configuring multiple motors...");
+  
+  // Configure 3 unconfigured motors with Node IDs 1, 2, 3
+  for (uint8_t nodeId = 1; nodeId <= 3; nodeId++) {
+    if (svarv.setMotorNodeId(0, nodeId)) {
+      Serial.println("Configured motor with Node ID " + String(nodeId));
+      delay(500); // Brief delay between configurations
+    }
+  }
+  
+  // Verify all motors
+  delay(2000);
+  auto discovered = svarv.scanForMotors(3000);
+  Serial.println("Found " + String(discovered.size()) + " configured motors");
+}
+```
+```
+
+### Interactive Node ID Setup
+
+For a complete interactive Node ID configuration tool, see the [Node_ID_Setup_Example.ino](examples/Node_ID_Setup_Example/Node_ID_Setup_Example.ino) which provides:
+
+- **Motor Discovery**: Scan and identify all motors on the bus
+- **New Motor Setup**: Configure unconfigured motors (Node ID = 0)
+- **Bulk Configuration**: Auto-assign sequential Node IDs to multiple motors
+- **ID Changes**: Change existing motor Node IDs
+- **Factory Reset**: Reset motors to default configuration
+- **Communication Testing**: Verify motor connectivity and status
+
+```cpp
+// Example interactive menu from Node_ID_Setup_Example.ino
+void setupNodeIds() {
+  Serial.println("=== NODE ID CONFIGURATION MENU ===");
+  Serial.println("1. scan  - Scan for motors and show Node IDs");
+  Serial.println("2. set   - Set Node ID for unconfigured motor");
+  Serial.println("3. auto  - Auto-configure multiple motors");
+  Serial.println("4. change- Change existing motor's Node ID");
+  Serial.println("5. reset - Factory reset motor");
+  Serial.println("6. test  - Test communication with motor");
+}
+```
+
+### Node ID Configuration
+
+Setting up Node IDs for new or unconfigured motors:
+
+```cpp
+// Configure a single unconfigured motor (Node ID = 0)
+bool setMotorNodeId(uint8_t newNodeId) {
+  uint8_t cmd = 0x51; // CMD_SYS_SET_NODE_ID
+  return svarv.sendCANMessage(0, 0b110, cmd, &newNodeId, 1);
+}
+
+// Example: Set Node ID for new motor
+void setupNewMotor() {
+  Serial.println("Setting up new motor with Node ID 1...");
+  
+  if (setMotorNodeId(1)) {
+    delay(1000); // Wait for motor to reconfigure
+    
+    // Verify the new motor responds
+    SvarvMotor& motor = svarv.addMotor(1);
+    if (motor.isConnected()) {
+      Serial.println("✅ Motor configured successfully!");
+      motor.saveConfig(); // Save to EEPROM
+    }
+  }
+}
+
+// Change existing motor's Node ID
+void changeMotorNodeId(uint8_t currentId, uint8_t newId) {
+  uint8_t cmd = 0x51; // CMD_SYS_SET_NODE_ID
+  if (svarv.sendCANMessage(currentId, 0b110, cmd, &newId, 1)) {
+    Serial.println("Node ID changed from " + String(currentId) + " to " + String(newId));
+    
+    // Update motor in system
+    svarv.removeMotor(currentId);
+    SvarvMotor& motor = svarv.addMotor(newId);
+    motor.saveConfig();
+  }
+}
+```
+
+### Interactive Node ID Setup
+
+For a complete interactive Node ID configuration tool, see the [Node_ID_Setup_Example.ino](examples/Node_ID_Setup_Example/Node_ID_Setup_Example.ino) which provides:
+
+- **Motor Discovery**: Scan and identify all motors on the bus
+- **New Motor Setup**: Configure unconfigured motors (Node ID = 0)
+- **Bulk Configuration**: Auto-assign sequential Node IDs to multiple motors
+- **ID Changes**: Change existing motor Node IDs
+- **Factory Reset**: Reset motors to default configuration
+- **Communication Testing**: Verify motor connectivity an# Svarv Motion Control Library
 
 [![Arduino Library](https://img.shields.io/badge/Arduino-Library-blue.svg)](https://www.arduino.cc/)
 [![Cross Platform](https://img.shields.io/badge/Platform-ESP32%20%7C%20STM32%20%7C%20AVR-green.svg)](https://github.com/svarv-robotics/svarv-motion-control)
@@ -277,6 +420,14 @@ The library includes comprehensive examples demonstrating various features:
 - Platform-specific configuration examples
 - Troubleshooting and diagnostics
 - Cross-platform compatibility testing
+
+### [Node_ID_Setup_Example.ino](examples/Node_ID_Setup_Example/Node_ID_Setup_Example.ino) (New!)
+- Interactive Node ID configuration tool
+- Setting up new/unconfigured motors (Node ID = 0)
+- Auto-configuring multiple motors with sequential IDs
+- Changing existing motor Node IDs
+- Factory reset and reconfiguration
+- Motor discovery and verification
 
 ## 🎛️ Control Modes
 
