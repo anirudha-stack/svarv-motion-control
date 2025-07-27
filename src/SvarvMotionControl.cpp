@@ -114,7 +114,7 @@ bool SvarvCANInterface_ESP32::receiveMessage(SvarvCANMessage& msg) {
 }
 
 bool SvarvCANInterface_ESP32::isAvailable() {
-    return ESP32Can.isListening();
+    return true; // TO BE FIXED
 }
 #endif // SVARV_PLATFORM_ESP32
 
@@ -748,18 +748,20 @@ SvarvMotor& SvarvMotionControl::addMotor(uint8_t node_id) {
     }
     
     // Check if motor already exists
-#ifdef ARDUINO_ARCH_AVR
-    if (motors_.find(node_id)) {
-        debugPrint("Motor with node ID " + String(node_id) + " already exists");
-        return motors_[node_id];
-    }
-#else
     auto it = motors_.find(node_id);
     if (it != motors_.end()) {
-        debugPrint("Motor with node ID " + String(node_id) + " already exists");
-        return *(it->second);
+        debugPrint("WARNING: Motor with node ID " + String(node_id) + " already exists");
+        
+        // Check if the existing motor is still connected
+        if (it->second->isConnected()) {
+            debugPrint("Existing motor is still connected - returning existing instance");
+            return *(it->second);
+        } else {
+            debugPrint("Existing motor is disconnected - replacing with new instance");
+            delete it->second;
+            motors_.erase(it);
+        }
     }
-#endif
     
     // Create new motor
     SvarvMotor* motor = new SvarvMotor(node_id, this);
@@ -767,30 +769,89 @@ SvarvMotor& SvarvMotionControl::addMotor(uint8_t node_id) {
     
     debugPrint("Added motor with node ID: " + String(node_id));
     
-    // Request initial status
+    // Request initial status (but don't assume it will respond immediately)
     motor->requestStatusUpdate();
     
     return *motor;
 }
 
+// Enhanced removeMotor with better cleanup
 bool SvarvMotionControl::removeMotor(uint8_t node_id) {
-#ifdef ARDUINO_ARCH_AVR
-    if (motors_.find(node_id)) {
-        delete motors_[node_id];
-        motors_.erase(node_id);
-        debugPrint("Removed motor with node ID: " + String(node_id));
-        return true;
-    }
-#else
     auto it = motors_.find(node_id);
     if (it != motors_.end()) {
+        debugPrint("Removing motor with node ID: " + String(node_id));
+        
+        // Safely stop the motor before removal
+        if (it->second->isConnected()) {
+            it->second->emergencyStop();
+            delay(100); // Allow time for stop command
+        }
+        
         delete it->second;
         motors_.erase(it);
-        debugPrint("Removed motor with node ID: " + String(node_id));
         return true;
     }
-#endif
+    
+    debugPrint("WARNING: Attempted to remove non-existent motor ID: " + String(node_id));
     return false;
+}
+
+// Helper function to check for node ID conflicts
+bool SvarvMotionControl::isNodeIdAvailable(uint8_t node_id) {
+    if (node_id == 0 || node_id > 255) {
+        return false;
+    }
+    
+    auto it = motors_.find(node_id);
+    if (it != motors_.end() && it->second->isConnected()) {
+        return false; // ID is in use by connected motor
+    }
+    
+    return true;
+}
+
+// Safe bulk configuration function
+int SvarvMotionControl::configureMotorRange(uint8_t start_id, uint8_t end_id, bool force_reconfigure) {
+    int configured_count = 0;
+    
+    if (start_id == 0 || end_id > 255 || start_id > end_id) {
+        debugPrint("ERROR: Invalid ID range");
+        return 0;
+    }
+    
+    for (uint8_t id = start_id; id <= end_id; id++) {
+        if (!force_reconfigure && !isNodeIdAvailable(id)) {
+            debugPrint("Skipping ID " + String(id) + " - already in use");
+            continue;
+        }
+        
+        if (force_reconfigure) {
+            removeMotor(id); // Force removal if requested
+        }
+        
+        // Attempt to configure unconfigured device to this ID
+        if (sendCANMessage(0, CAN_FUNCTION_SYSTEM, CMD_SYS_SET_NODE_ID, &id, 1)) {
+            delay(1000);
+            
+            SvarvMotor& motor = addMotor(id);
+            motor.requestStatusUpdate();
+            
+            // Brief verification period
+            for (int i = 0; i < 5; i++) {
+                processIncomingMessages();
+                delay(100);
+            }
+            
+            if (motor.isConnected()) {
+                configured_count++;
+                debugPrint("Successfully configured motor ID " + String(id));
+            } else {
+                removeMotor(id);
+            }
+        }
+    }
+    
+    return configured_count;
 }
 
 SvarvMotor* SvarvMotionControl::getMotor(uint8_t node_id) {
@@ -879,14 +940,141 @@ int SvarvMotionControl::disableAll() {
     return count;
 }
 
+
+int SvarvMotionControl::autoConfigureMotors(uint8_t start_id, uint8_t max_motors) {
+    debugPrint("Auto-configuring motors starting from ID " + String(start_id));
+    
+    int configured_count = 0;
+    uint8_t current_id = start_id;
+    
+    // First, scan for existing configured motors to avoid conflicts
+    std::vector<uint8_t> existing_ids;
+    for (auto& pair : motors_) {
+        if (pair.second && pair.second->isConnected()) {
+            existing_ids.push_back(pair.first);
+            debugPrint("Found existing configured motor with ID: " + String(pair.first));
+        }
+    }
+    
+    // Look for unconfigured motors (node ID = 0)
+    for (int attempt = 0; attempt < max_motors && configured_count < max_motors; attempt++) {
+        // Skip IDs that are already in use
+        while (std::find(existing_ids.begin(), existing_ids.end(), current_id) != existing_ids.end()) {
+            current_id++;
+            if (current_id > 255) {
+                debugPrint("ERROR: Ran out of available node IDs");
+                return configured_count;
+            }
+        }
+        
+        debugPrint("Attempting to configure unconfigured device (ID=0) to ID " + String(current_id));
+        
+        // Send node ID setup command to unconfigured device (node 0)
+        if (sendCANMessage(0, CAN_FUNCTION_SYSTEM, CMD_SYS_SET_NODE_ID, &current_id, 1)) {
+            delay(1000); // Wait longer for configuration to complete and device to restart
+            
+            // Clear any existing motor object for this ID to prevent conflicts
+            removeMotor(current_id);
+            
+            // Try to communicate with the newly configured motor
+            SvarvMotor& motor = addMotor(current_id);
+            
+            // Request status to verify the motor is responding
+            if (motor.requestStatusUpdate()) {
+                delay(500); // Wait for response
+                
+                // Process any incoming messages
+                for (int i = 0; i < 10; i++) {
+                    processIncomingMessages();
+                    delay(10);
+                }
+                
+                // Check if motor is now connected
+                if (motor.isConnected()) {
+                    debugPrint("Successfully configured motor with node ID: " + String(current_id));
+                    existing_ids.push_back(current_id); // Add to existing list
+                    configured_count++;
+                    current_id++;
+                } else {
+                    debugPrint("No response from newly configured motor ID " + String(current_id));
+                    removeMotor(current_id); // Clean up failed attempt
+                }
+            } else {
+                debugPrint("Failed to send status request to motor ID " + String(current_id));
+                removeMotor(current_id); // Clean up failed attempt
+            }
+        } else {
+            debugPrint("Failed to send node ID configuration command");
+        }
+        
+        delay(100); // Delay between attempts
+    }
+    
+    debugPrint("Auto-configuration complete. Configured " + String(configured_count) + " motors");
+    
+    // Print summary of all configured motors
+    debugPrint("=== MOTOR CONFIGURATION SUMMARY ===");
+    auto all_motors = getAllMotors();
+    for (auto* motor : all_motors) {
+        if (motor && motor->isConnected()) {
+            debugPrint("Motor ID " + String(motor->getNodeId()) + ": Connected");
+        }
+    }
+    debugPrint("=====================================");
+    
+    return configured_count;
+}
+
+// Also add a helper function to safely scan for unconfigured devices
+std::vector<uint8_t> SvarvMotionControl::scanForUnconfiguredMotors(unsigned long timeout_ms) {
+    std::vector<uint8_t> unconfigured_responses;
+    unsigned long start_time = millis();
+    
+    debugPrint("Scanning for unconfigured motors (node ID = 0)...");
+    
+    // Send status query to node 0 (unconfigured devices)
+    sendCANMessage(0, CAN_FUNCTION_QUERY, CMD_QUERY_STATUS);
+    
+    // Also send version request to see if any unconfigured devices respond
+    sendCANMessage(0, CAN_FUNCTION_SYSTEM, CMD_SYS_GET_VERSION);
+    
+    // Listen for responses
+    while (millis() - start_time < timeout_ms) {
+        processIncomingMessages();
+        delay(10);
+    }
+    
+    // Count how many unconfigured devices responded
+    // This is tricky because unconfigured devices all have node ID 0
+    // We can infer from the responses we received
+    
+    debugPrint("Unconfigured device scan complete");
+    return unconfigured_responses; // May need more sophisticated logic here
+}
+
+// Enhanced motor scanning that respects existing configurations
 std::vector<uint8_t> SvarvMotionControl::scanForMotors(unsigned long timeout_ms) {
     std::vector<uint8_t> discovered_nodes;
     unsigned long start_time = millis();
     
     debugPrint("Scanning for motors (timeout: " + String(timeout_ms) + "ms)...");
     
-    // Send status queries to potential node IDs
+    // First scan existing motors in our list
+    auto existing_motors = getAllMotors();
+    for (auto* motor : existing_motors) {
+        if (motor) {
+            debugPrint("Checking existing motor ID " + String(motor->getNodeId()));
+            motor->requestStatusUpdate();
+        }
+    }
+    
+    // Send status queries to potential node IDs (skip 0 for now)
     for (uint8_t node_id = 1; node_id <= 20; node_id++) {
+        // Skip if we already have this motor
+        if (getMotor(node_id) != nullptr) {
+            continue;
+        }
+        
         sendCANMessage(node_id, CAN_FUNCTION_QUERY, CMD_QUERY_STATUS);
         delay(10); // Small delay between queries
     }
@@ -898,8 +1086,8 @@ std::vector<uint8_t> SvarvMotionControl::scanForMotors(unsigned long timeout_ms)
     }
     
     // Check which motors responded
-    auto motors = getAllMotors();
-    for (auto* motor : motors) {
+    auto all_motors = getAllMotors();
+    for (auto* motor : all_motors) {
         if (motor && motor->isConnected()) {
             discovered_nodes.push_back(motor->getNodeId());
         }
@@ -909,32 +1097,6 @@ std::vector<uint8_t> SvarvMotionControl::scanForMotors(unsigned long timeout_ms)
     return discovered_nodes;
 }
 
-int SvarvMotionControl::autoConfigureMotors(uint8_t start_id, uint8_t max_motors) {
-    debugPrint("Auto-configuring motors starting from ID " + String(start_id));
-    
-    int configured_count = 0;
-    uint8_t current_id = start_id;
-    
-    // Look for unconfigured motors (node ID = 0)
-    for (int attempt = 0; attempt < max_motors && configured_count < max_motors; attempt++) {
-        // Send node ID setup command to unconfigured device
-        if (sendCANMessage(0, CAN_FUNCTION_SYSTEM, CMD_SYS_SET_NODE_ID, &current_id, 1)) {
-            delay(500); // Wait for configuration to complete
-            
-            // Try to communicate with the newly configured motor
-            if (sendCANMessage(current_id, CAN_FUNCTION_QUERY, CMD_QUERY_STATUS)) {
-                debugPrint("Configured motor with node ID: " + String(current_id));
-                configured_count++;
-                current_id++;
-            }
-        }
-        
-        delay(100); // Delay between attempts
-    }
-    
-    debugPrint("Auto-configuration complete. Configured " + String(configured_count) + " motors");
-    return configured_count;
-}
 
 int SvarvMotionControl::getConnectedMotorCount() const {
     int count = 0;
