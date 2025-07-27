@@ -364,8 +364,8 @@ uint32_t sent, received, errors;
 svarv.getCANStatistics(sent, received, errors);
 Serial.println("CAN Stats - Sent: " + String(sent) + ", Errors: " + String(errors));
 
-// Platform information
-Serial.println("Platform: " + svarv.getPlatformInfo());
+// Platform information (if available)
+Serial.println("Library Version: " + SvarvMotionControl::getVersion());
 ```
 
 ## 🔧 Advanced Features
@@ -391,50 +391,45 @@ Serial.println("Configured " + String(configured) + " motors");
 Setting up Node IDs for new or unconfigured motors:
 
 ```cpp
-// Configure a single unconfigured motor (Node ID = 0)
-void setupNewMotor() {
-  Serial.println("Setting up new motor with Node ID 1...");
+// Configure unconfigured motors automatically
+void setupNewMotors() {
+  Serial.println("Configuring unconfigured motors...");
   
-  if (svarv.setMotorNodeId(0, 1)) { // From unconfigured (0) to Node ID 1
-    delay(1000); // Wait for motor to reconfigure
+  // Auto-configure starting from Node ID 1, max 5 motors
+  int configured = svarv.autoConfigureMotors(1, 5);
+  if (configured > 0) {
+    Serial.println("✅ Configured " + String(configured) + " motors!");
     
-    // Verify the new motor responds
-    SvarvMotor& motor = svarv.addMotor(1);
-    if (motor.isConnected()) {
-      Serial.println("✅ Motor configured successfully!");
-      motor.saveConfig(); // Save to EEPROM
+    // Verify the new motors respond
+    delay(2000);
+    auto discovered = svarv.scanForMotors(3000);
+    for (uint8_t nodeId : discovered) {
+      SvarvMotor& motor = svarv.addMotor(nodeId);
+      if (motor.isConnected()) {
+        motor.saveConfig(); // Save to EEPROM
+      }
     }
   }
 }
 
-// Change existing motor's Node ID
-void changeMotorNodeId(uint8_t currentId, uint8_t newId) {
-  if (svarv.setMotorNodeId(currentId, newId)) {
-    Serial.println("Node ID changed from " + String(currentId) + " to " + String(newId));
-    
-    // Update motor in system
-    svarv.removeMotor(currentId);
-    SvarvMotor& motor = svarv.addMotor(newId);
-    motor.saveConfig();
-  }
-}
+// For changing existing motor Node IDs, use the interactive tool
+// See Node_ID_Setup_Example.ino for step-by-step configuration
 
 // Bulk configuration example
 void setupMultipleMotors() {
-  Serial.println("Configuring multiple motors...");
+  Serial.println("Scanning for unconfigured motors...");
   
-  // Configure 3 unconfigured motors with Node IDs 1, 2, 3
-  for (uint8_t nodeId = 1; nodeId <= 3; nodeId++) {
-    if (svarv.setMotorNodeId(0, nodeId)) {
-      Serial.println("Configured motor with Node ID " + String(nodeId));
-      delay(500); // Brief delay between configurations
-    }
+  // Configure multiple unconfigured motors with sequential IDs
+  int configured = svarv.autoConfigureMotors(1, 10); // Start from ID 1, max 10
+  
+  if (configured > 0) {
+    Serial.println("Configured " + String(configured) + " motors with IDs 1-" + String(configured));
+    
+    // Verify all motors
+    delay(2000);
+    auto discovered = svarv.scanForMotors(3000);
+    Serial.println("Found " + String(discovered.size()) + " configured motors");
   }
-  
-  // Verify all motors
-  delay(2000);
-  auto discovered = svarv.scanForMotors(3000);
-  Serial.println("Found " + String(discovered.size()) + " configured motors");
 }
 ```
 
@@ -697,8 +692,8 @@ svarv.enableDebug(true);
 | `update()` | Process CAN messages (call frequently!) |
 | `scanForMotors(timeout)` | Discover motors on bus |
 | `emergencyStopAll()` | Stop all motors |
-| `setMotorNodeId(current, new)` | Configure motor Node IDs |
-| `getPlatformInfo()` | Get platform information |
+| `setMotorNodeId(current, new)` | Configure motor Node IDs (via autoConfigureMotors) |
+| `getPlatformInfo()` | Get platform information (if available) |
 | `enableDebug(enable)` | Enable/disable debug output |
 
 ### SvarvMotor Class
