@@ -1,16 +1,41 @@
 # Svarv Motion Control Library
 
 [![Arduino Library](https://img.shields.io/badge/Arduino-Library-blue.svg)](https://www.arduino.cc/)
-[![ESP32](https://img.shields.io/badge/Platform-ESP32-green.svg)](https://www.espressif.com/)
+[![Cross Platform](https://img.shields.io/badge/Platform-ESP32%20%7C%20STM32%20%7C%20AVR-green.svg)](https://github.com/svarv-robotics/svarv-motion-control)
 [![CAN Bus](https://img.shields.io/badge/Interface-CAN%20Bus-orange.svg)](https://en.wikipedia.org/wiki/CAN_bus)
-[![Version](https://img.shields.io/badge/Version-1.0.0-brightgreen.svg)](https://github.com/svarv-robotics/svarv-motion-control)
+[![Version](https://img.shields.io/badge/Version-2.0.0-brightgreen.svg)](https://github.com/svarv-robotics/svarv-motion-control)
 
-A comprehensive Arduino library for controlling CAN-based BLDC motor controllers. Inspired by industry-leading libraries like SimpleFOC, ODrive, and VESC, this library provides a simple yet powerful interface for advanced motor control applications.
+A comprehensive cross-platform Arduino library for controlling CAN-based BLDC motor controllers. Inspired by industry-leading libraries like SimpleFOC, ODrive, and VESC, this library provides a simple yet powerful interface for advanced motor control applications across multiple hardware platforms.
+
+## 🚀 New in Version 2.0 - Cross-Platform Support
+
+### **Universal Compatibility**
+- **ESP32**: Built-in CAN via ESP32-TWAI-CAN library (original platform)
+- **STM32**: Built-in CAN via STM32duino library (new!)
+- **Arduino AVR**: MCP2515 external CAN controller support (new!)
+- **Generic Platforms**: Universal MCP2515 support (new!)
+
+### **Automatic Platform Detection**
+The library now automatically detects your hardware platform and configures the appropriate CAN interface. Your existing ESP32 code continues to work unchanged, while new platforms are seamlessly supported.
+
+### **Memory Optimization**
+Platform-specific optimizations ensure optimal performance on resource-constrained devices like Arduino Uno while maintaining full features on powerful platforms like ESP32.
+
+## 🎯 Supported Platforms
+
+| Platform | CAN Interface | Memory Usage | Max Motors | Performance |
+|----------|---------------|--------------|------------|-------------|
+| **ESP32** | Built-in CAN (TWAI) | ~8KB | 255 | Excellent |
+| **STM32** | Built-in CAN peripheral | ~6KB | 255 | Excellent |
+| **Arduino AVR** | MCP2515 (SPI) | ~3KB | 8* | Good |
+| **Generic** | MCP2515 (SPI) | ~4KB | 255 | Good |
+
+*Memory-optimized for Arduino Uno/Nano
 
 ## 🚀 Features
 
 ### **Multi-Motor Control**
-- Control up to 255 motors on a single CAN bus
+- Control up to 255 motors on a single CAN bus (8 on Arduino AVR)
 - Automatic motor discovery and configuration
 - Synchronized coordinated movements
 - Individual motor status monitoring
@@ -32,26 +57,46 @@ A comprehensive Arduino library for controlling CAN-based BLDC motor controllers
 - **Non-blocking Operations** - Asynchronous communication with callback support
 - **Configuration Management** - Save/load parameters to motor EEPROM
 - **Safety Systems** - Emergency stops, timeout protection, limit enforcement
+- **Cross-Platform Compatibility** - Works seamlessly across different hardware
 
 ## 📋 Requirements
 
-### Hardware
-- **ESP32** with built-in CAN controller (ESP32-C3, ESP32-S3, ESP32 Classic)
+### Hardware by Platform
+
+#### ESP32 Platforms (Original Support)
+- **ESP32** with built-in CAN (ESP32-C3, ESP32-S3, ESP32 Classic)
 - **CAN Transceiver** (SN65HVD230, TJA1050, or similar)
-- **Svarv BLDC Motor Controller(s)** with firmware v1.2 or later
 - **120Ω termination resistors** at both ends of CAN bus
+
+#### STM32 Platforms (New!)
+- **STM32F1, STM32F4, STM32F7, STM32H7** with built-in CAN
+- **CAN Transceiver** (SN65HVD230, TJA1050, or similar)
+- **120Ω termination resistors** at both ends of CAN bus
+
+#### Arduino AVR Platforms (New!)
+- **Arduino Uno, Mega, Nano** or compatible
+- **MCP2515 CAN Controller Module**
+- **120Ω termination resistors** at both ends of CAN bus
+
+#### All Platforms
+- **Svarv BLDC Motor Controller(s)** with firmware v1.2 or later
 
 ### Software
 - **Arduino IDE** 1.8.0+ or **PlatformIO**
-- **ESP32-TWAI-CAN library** (automatically installed)
+- Platform-specific libraries (automatically installed):
+  - ESP32: **ESP32-TWAI-CAN library**
+  - STM32: **STM32duino** (built-in CAN)
+  - AVR/Generic: **mcp_can library**
 
 ## 🔧 Installation
 
-### Method 1: Arduino Library Manager
+### Method 1: Arduino Library Manager (Recommended)
 1. Open Arduino IDE
 2. Go to **Sketch → Include Library → Manage Libraries**
 3. Search for "Svarv Motion Control"
 4. Click **Install**
+
+The library automatically installs platform-specific dependencies based on your selected board.
 
 ### Method 2: Manual Installation
 1. Download the latest release from [GitHub](https://github.com/svarv-robotics/svarv-motion-control)
@@ -62,12 +107,12 @@ A comprehensive Arduino library for controlling CAN-based BLDC motor controllers
 Add to your `platformio.ini`:
 ```ini
 lib_deps = 
-    svarv-robotics/Svarv Motion Control@^1.0.0
+    svarv-robotics/Svarv Motion Control@^2.0.0
 ```
 
 ## 🚀 Quick Start
 
-### Basic Single Motor Control
+### Universal Example (Auto-Platform Detection)
 
 ```cpp
 #include "SvarvMotionControl.h"
@@ -78,7 +123,7 @@ SvarvMotor motor1;
 void setup() {
   Serial.begin(115200);
   
-  // Initialize CAN bus at 1 Mbps
+  // Auto-detect platform and initialize CAN bus at 1 Mbps
   if (!svarv.begin(1000000)) {
     Serial.println("CAN initialization failed!");
     while(1);
@@ -89,6 +134,8 @@ void setup() {
   
   // Set position control mode
   motor1.setControlMode(SVARV_MODE_POSITION);
+  
+  Serial.println("Platform: " + svarv.getPlatformInfo());
 }
 
 void loop() {
@@ -104,6 +151,56 @@ void loop() {
 }
 ```
 
+### Platform-Specific Quick Start
+
+#### ESP32 with Custom Pins
+```cpp
+void setup() {
+  Serial.begin(115200);
+  
+  // ESP32 with custom CAN pins
+  if (!svarv.begin(1000000, 4, 5)) { // TX=GPIO4, RX=GPIO5
+    Serial.println("CAN initialization failed!");
+    while(1);
+  }
+  
+  motor1 = svarv.addMotor(1);
+  motor1.setControlMode(SVARV_MODE_POSITION);
+}
+```
+
+#### STM32 with CAN2
+```cpp
+void setup() {
+  Serial.begin(115200);
+  
+  // STM32 using CAN2 instead of CAN1
+  if (!svarv.begin(1000000, 2)) {
+    Serial.println("CAN initialization failed!");
+    while(1);
+  }
+  
+  motor1 = svarv.addMotor(1);
+  motor1.setControlMode(SVARV_MODE_POSITION);
+}
+```
+
+#### Arduino + MCP2515
+```cpp
+void setup() {
+  Serial.begin(115200);
+  
+  // Arduino with MCP2515: speed, CS pin, INT pin, crystal freq
+  if (!svarv.begin(1000000, 10, 2, MCP_8MHZ)) {
+    Serial.println("CAN initialization failed!");
+    while(1);
+  }
+  
+  motor1 = svarv.addMotor(1);
+  motor1.setControlMode(SVARV_MODE_POSITION);
+}
+```
+
 ### Multi-Motor Coordination
 
 ```cpp
@@ -114,7 +211,7 @@ SvarvMotor motor1, motor2, motor3;
 
 void setup() {
   Serial.begin(115200);
-  svarv.begin(1000000);
+  svarv.begin(1000000); // Auto-detect platform
   
   // Auto-discover motors
   auto discovered = svarv.scanForMotors(5000);
@@ -174,6 +271,12 @@ The library includes comprehensive examples demonstrating various features:
 - Step response testing
 - Performance analysis
 - Automated tuning suggestions
+
+### [Cross_Platform_Example.ino](examples/Cross_Platform_Example/Cross_Platform_Example.ino) (New!)
+- Platform auto-detection demonstration
+- Platform-specific configuration examples
+- Troubleshooting and diagnostics
+- Cross-platform compatibility testing
 
 ## 🎛️ Control Modes
 
@@ -308,6 +411,9 @@ if (!svarv.isCANHealthy()) {
 uint32_t sent, received, errors;
 svarv.getCANStatistics(sent, received, errors);
 Serial.println("CAN Stats - Sent: " + String(sent) + ", Errors: " + String(errors));
+
+// Platform information
+Serial.println("Platform: " + svarv.getPlatformInfo());
 ```
 
 ## 🔧 Advanced Features
@@ -366,9 +472,25 @@ void loop() {
 }
 ```
 
+### Platform Detection and Information
+
+```cpp
+void setup() {
+  // Detect platform before initialization
+  SvarvPlatformType platform = svarvDetectPlatform();
+  Serial.println("Detected: " + svarvPlatformToString(platform));
+  
+  svarv.begin(1000000);
+  
+  // Get detailed platform info
+  Serial.println("CAN Interface: " + svarv.getPlatformInfo());
+  Serial.println("Library Version: " + SvarvMotionControl::getVersion());
+}
+```
+
 ## 🛠️ Hardware Setup
 
-### CAN Bus Wiring
+### ESP32 CAN Bus Wiring
 
 ```
 ESP32          CAN Transceiver          Motor Controller
@@ -384,19 +506,54 @@ GND      ----> GND
 Add 120Ω resistors between CANH and CANL at both ends of the bus
 ```
 
+### STM32 CAN Bus Wiring (New!)
+
+```
+STM32F4        CAN Transceiver          Motor Controller
+-------        ---------------          ----------------
+PB9      ----> CTX (TX)
+PB8      ----> CRX (RX)
+3.3V     ----> VCC
+GND      ----> GND
+                    CANH  ============== CANH
+                    CANL  ============== CANL
+                    GND   ============== GND
+
+Pin configuration varies by STM32 variant - check your board's documentation
+```
+
+### Arduino + MCP2515 Wiring (New!)
+
+```
+Arduino Uno    MCP2515 Module           Motor Controller
+-----------    --------------           ----------------
+Pin 13   ----> SCK
+Pin 11   ----> MOSI (SI)
+Pin 12   ----> MISO (SO)
+Pin 10   ----> CS
+Pin 2    ----> INT
+5V       ----> VCC
+GND      ----> GND
+                    CANH  ============== CANH
+                    CANL  ============== CANL
+                    GND   ============== GND
+
+CS and INT pins are configurable in software
+```
+
 ### Multi-Motor Setup
 
 ```
-     ESP32
-       |
-  CAN Transceiver
-       |
+     Platform (ESP32/STM32/Arduino)
+               |
+          CAN Interface
+               |
   -----+-----+-----+-----
   |    |     |     |    |
 Motor1 Motor2 Motor3 ... MotorN
 (ID=1) (ID=2) (ID=3)    (ID=N)
 
-Each motor needs unique node ID (1-255)
+Each motor needs unique node ID (1-255, or 1-8 on Arduino AVR)
 ```
 
 ## 🚨 Safety & Error Handling
@@ -442,20 +599,56 @@ motor.moveTo(currentTarget); // Refresh target
 
 ## 🐛 Troubleshooting
 
-### Common Issues
+### Platform-Specific Issues
 
-**Motor not responding:**
+#### ESP32 Issues
 ```cpp
 // Check connection
 if (!motor.isConnected()) {
   Serial.println("Motor not connected - check CAN bus");
 }
 
+// Verify platform detection
+Serial.println("Platform: " + svarv.getPlatformInfo());
+```
+
+#### STM32 Issues (New!)
+```cpp
+// Check if STM32 CAN is available
+if (!svarv.begin(1000000)) {
+  Serial.println("STM32 CAN initialization failed!");
+  Serial.println("Check if your STM32 variant has CAN peripheral");
+}
+```
+
+#### Arduino + MCP2515 Issues (New!)
+```cpp
+// Try different pin configurations
+int csPins[] = {10, 9, 8};
+int intPins[] = {2, 3};
+
+for (int cs : csPins) {
+  for (int intPin : intPins) {
+    if (svarv.begin(1000000, cs, intPin, MCP_8MHZ)) {
+      Serial.println("Success with CS=" + String(cs) + ", INT=" + String(intPin));
+      break;
+    }
+  }
+}
+```
+
+### Common Issues
+
+**Motor not responding:**
+```cpp
 // Check node ID
 Serial.println("Motor node ID: " + String(motor.getNodeId()));
 
 // Request status update
 motor.requestStatusUpdate();
+
+// Check platform compatibility
+Serial.println("Platform: " + svarv.getPlatformInfo());
 ```
 
 **CAN bus errors:**
@@ -492,8 +685,24 @@ svarv.enableDebug(true);
 
 // This will print detailed CAN communication info:
 // [Svarv] CAN bus initialized @ 1000000 bps
+// [Svarv] Platform: ESP32 Built-in CAN
 // [Svarv] Added motor with node ID: 1
 // [Svarv] Motor 1 connection: Disconnected -> Connected
+```
+
+### Memory Optimization (Arduino AVR)
+
+```cpp
+// For Arduino Uno/Nano - memory-efficient operation
+void setup() {
+  Serial.begin(9600);        // Lower baud rate
+  svarv.enableDebug(false);  // Disable debug output
+  svarv.begin(500000);       // Lower CAN speed
+  
+  // Limit number of motors on AVR
+  motor1 = svarv.addMotor(1);
+  // Don't add too many motors on memory-constrained devices
+}
 ```
 
 ## 📚 API Reference
@@ -502,11 +711,15 @@ svarv.enableDebug(true);
 
 | Method | Description |
 |--------|-------------|
-| `begin(speed, tx, rx)` | Initialize CAN bus |
+| `begin(speed)` | Initialize with auto-platform detection |
+| `begin(speed, tx, rx)` | Initialize ESP32 with custom pins |
+| `begin(speed, can_instance)` | Initialize STM32 with CAN1/CAN2 |
+| `begin(speed, cs, int, crystal)` | Initialize MCP2515 with full config |
 | `addMotor(nodeId)` | Add motor to system |
 | `update()` | Process CAN messages (call frequently!) |
 | `scanForMotors(timeout)` | Discover motors on bus |
 | `emergencyStopAll()` | Stop all motors |
+| `getPlatformInfo()` | Get platform information |
 | `enableDebug(enable)` | Enable/disable debug output |
 
 ### SvarvMotor Class
@@ -523,13 +736,27 @@ svarv.enableDebug(true);
 | `getStatus()` | Get current status |
 | `saveConfig()` | Save to EEPROM |
 
+### Platform Utility Functions (New!)
+
+| Function | Description |
+|----------|-------------|
+| `svarvDetectPlatform()` | Detect current hardware platform |
+| `svarvPlatformToString(platform)` | Convert platform enum to string |
+| `SvarvMotionControl::getVersion()` | Get library version |
+
 ## 🤝 Contributing
 
-We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.md) for details.
+We welcome contributions for all platforms! Please see our [Contributing Guidelines](CONTRIBUTING.md) for details.
+
+### Platform-Specific Contributions
+- **ESP32**: Advanced features, new ESP32 variants support
+- **STM32**: Additional STM32 family support, CAN3 support  
+- **AVR**: Memory optimizations, faster algorithms
+- **Generic**: New platform support, additional CAN controllers
 
 ### Development Setup
 1. Clone the repository
-2. Install dependencies
+2. Install dependencies for your target platform
 3. Run examples with hardware
 4. Submit pull requests
 
@@ -544,6 +771,11 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - **Discussions:** [GitHub Discussions](https://github.com/svarv-robotics/svarv-motion-control/discussions)
 - **Email:** support@svarv.com
 
+### Platform-Specific Support
+- **ESP32**: ESP32 Arduino Core documentation
+- **STM32**: STM32duino documentation  
+- **Arduino AVR**: MCP_CAN library documentation
+
 ## 🙏 Acknowledgments
 
 Inspired by excellent motor control libraries:
@@ -551,6 +783,11 @@ Inspired by excellent motor control libraries:
 - [ODrive](https://odriverobotics.com/) - High-performance motor controller
 - [VESC](https://vesc-project.com/) - Open-source motor controller
 - [MJBots](https://mjbots.com/) - Precision servo controllers
+
+Platform libraries that make cross-platform support possible:
+- **ESP32-TWAI-CAN** by Thomas Barth - ESP32 CAN support
+- **STM32duino** by STMicroelectronics - STM32 Arduino core
+- **MCP_CAN** by Cory J. Fowler - MCP2515 CAN controller support
 
 ## 🔗 Related Projects
 
@@ -560,4 +797,4 @@ Inspired by excellent motor control libraries:
 
 ---
 
-**Built with ❤️ by [Svarv Robotics](https://svarv.com)**
+**Built with ❤️ by [Svarv Robotics](https://svarv.com) - Now supporting your favorite platform!**

@@ -1,7 +1,7 @@
 /**
  * @file SvarvMotionControl.cpp
- * @brief Svarv Motion Control Library Implementation
- * @version 1.0.0
+ * @brief Svarv Motion Control Library Implementation - Cross-Platform Support
+ * @version 2.0.0
  * @date 2025-07-26
  */
 
@@ -65,6 +65,202 @@
 #define MAX_RESPONSE_WAIT_MS       500
 
 // ============================================================================
+// PLATFORM-SPECIFIC CAN INTERFACE IMPLEMENTATIONS
+// ============================================================================
+
+#ifdef SVARV_PLATFORM_ESP32
+bool SvarvCANInterface_ESP32::begin(const SvarvPlatformConfig& config) {
+    config_ = config;
+    
+    // Configure CAN pins and settings
+    ESP32Can.setPins(config_.esp32_tx_pin, config_.esp32_rx_pin);
+    ESP32Can.setRxQueueSize(32);
+    ESP32Can.setTxQueueSize(16);
+    ESP32Can.setSpeed(ESP32Can.convertSpeed(config_.can_speed));
+    
+    // Initialize CAN bus
+    return ESP32Can.begin();
+}
+
+bool SvarvCANInterface_ESP32::sendMessage(const SvarvCANMessage& msg) {
+    CanFrame frame = {0};
+    frame.identifier = msg.id;
+    frame.extd = msg.extended ? 1 : 0;
+    frame.rtr = msg.rtr ? 1 : 0;
+    frame.data_length_code = msg.length;
+    
+    for (int i = 0; i < msg.length && i < 8; i++) {
+        frame.data[i] = msg.data[i];
+    }
+    
+    return ESP32Can.writeFrame(frame);
+}
+
+bool SvarvCANInterface_ESP32::receiveMessage(SvarvCANMessage& msg) {
+    CanFrame frame;
+    if (ESP32Can.readFrame(frame, 1)) {
+        msg.id = frame.identifier;
+        msg.extended = frame.extd != 0;
+        msg.rtr = frame.rtr != 0;
+        msg.length = frame.data_length_code;
+        
+        for (int i = 0; i < msg.length && i < 8; i++) {
+            msg.data[i] = frame.data[i];
+        }
+        
+        return true;
+    }
+    return false;
+}
+
+bool SvarvCANInterface_ESP32::isAvailable() {
+    return ESP32Can.isListening();
+}
+#endif // SVARV_PLATFORM_ESP32
+
+#ifdef SVARV_PLATFORM_STM32
+SvarvCANInterface_STM32::SvarvCANInterface_STM32() : can_(nullptr) {}
+
+SvarvCANInterface_STM32::~SvarvCANInterface_STM32() {
+    delete can_;
+}
+
+bool SvarvCANInterface_STM32::begin(const SvarvPlatformConfig& config) {
+    config_ = config;
+    
+    // Create CAN instance based on configuration
+    if (config_.stm32_can_instance == 1) {
+        can_ = new STM32_CAN(CAN1);
+    } else if (config_.stm32_can_instance == 2) {
+        can_ = new STM32_CAN(CAN2);
+    } else {
+        return false;
+    }
+    
+    // Configure CAN speed
+    can_->begin();
+    can_->setBaudRate(config_.can_speed);
+    
+    return true;
+}
+
+bool SvarvCANInterface_STM32::sendMessage(const SvarvCANMessage& msg) {
+    if (!can_) return false;
+    
+    CAN_message_t stm32_msg;
+    stm32_msg.id = msg.id;
+    stm32_msg.ext = msg.extended;
+    stm32_msg.rtr = msg.rtr;
+    stm32_msg.len = msg.length;
+    
+    for (int i = 0; i < msg.length && i < 8; i++) {
+        stm32_msg.buf[i] = msg.data[i];
+    }
+    
+    return can_->write(stm32_msg) > 0;
+}
+
+bool SvarvCANInterface_STM32::receiveMessage(SvarvCANMessage& msg) {
+    if (!can_) return false;
+    
+    CAN_message_t stm32_msg;
+    if (can_->read(stm32_msg)) {
+        msg.id = stm32_msg.id;
+        msg.extended = stm32_msg.ext;
+        msg.rtr = stm32_msg.rtr;
+        msg.length = stm32_msg.len;
+        
+        for (int i = 0; i < msg.length && i < 8; i++) {
+            msg.data[i] = stm32_msg.buf[i];
+        }
+        
+        return true;
+    }
+    return false;
+}
+
+bool SvarvCANInterface_STM32::isAvailable() {
+    return can_ != nullptr;
+}
+#endif // SVARV_PLATFORM_STM32
+
+#if defined(SVARV_PLATFORM_AVR) || defined(SVARV_PLATFORM_GENERIC)
+SvarvCANInterface_MCP2515::SvarvCANInterface_MCP2515() : can_(nullptr) {}
+
+SvarvCANInterface_MCP2515::~SvarvCANInterface_MCP2515() {
+    delete can_;
+}
+
+bool SvarvCANInterface_MCP2515::begin(const SvarvPlatformConfig& config) {
+    config_ = config;
+    
+    // Initialize SPI
+    SPI.begin();
+    
+    // Create MCP_CAN instance
+    can_ = new MCP_CAN(config_.mcp2515_cs_pin);
+    
+    // Configure interrupt pin if specified
+    if (config_.mcp2515_int_pin >= 0) {
+        pinMode(config_.mcp2515_int_pin, INPUT);
+    }
+    
+    // Convert CAN speed to MCP2515 constants
+    uint8_t can_speed_cfg;
+    switch (config_.can_speed) {
+        case 1000000: can_speed_cfg = CAN_1000KBPS; break;
+        case 500000:  can_speed_cfg = CAN_500KBPS; break;
+        case 250000:  can_speed_cfg = CAN_250KBPS; break;
+        case 125000:  can_speed_cfg = CAN_125KBPS; break;
+        case 100000:  can_speed_cfg = CAN_100KBPS; break;
+        case 50000:   can_speed_cfg = CAN_50KBPS; break;
+        case 20000:   can_speed_cfg = CAN_20KBPS; break;
+        case 10000:   can_speed_cfg = CAN_10KBPS; break;
+        case 5000:    can_speed_cfg = CAN_5KBPS; break;
+        default:      can_speed_cfg = CAN_500KBPS; break;
+    }
+    
+    // Initialize MCP2515
+    return can_->begin(can_speed_cfg, config_.mcp2515_crystal_freq) == CAN_OK;
+}
+
+bool SvarvCANInterface_MCP2515::sendMessage(const SvarvCANMessage& msg) {
+    if (!can_) return false;
+    
+    uint8_t result = can_->sendMsgBuf(msg.id, msg.extended ? 1 : 0, msg.length, msg.data);
+    return result == CAN_OK;
+}
+
+bool SvarvCANInterface_MCP2515::receiveMessage(SvarvCANMessage& msg) {
+    if (!can_) return false;
+    
+    if (can_->checkReceive() == CAN_MSGAVAIL) {
+        uint32_t id;
+        uint8_t len;
+        uint8_t buf[8];
+        
+        if (can_->readMsgBuf(&id, &len, buf) == CAN_OK) {
+            msg.id = id;
+            msg.extended = (id & 0x80000000) != 0;
+            msg.rtr = false; // MCP2515 library handles RTR differently
+            msg.length = len;
+            
+            for (int i = 0; i < len && i < 8; i++) {
+                msg.data[i] = buf[i];
+            }
+            
+            return true;
+        }
+    }
+    return false;
+}
+
+bool SvarvCANInterface_MCP2515::isAvailable() {
+    return can_ != nullptr;
+}
+#endif // SVARV_PLATFORM_AVR || SVARV_PLATFORM_GENERIC
+
+// ============================================================================
 // UTILITY FUNCTIONS IMPLEMENTATION
 // ============================================================================
 
@@ -108,6 +304,26 @@ String svarvConnectionStateToString(SvarvConnectionState state) {
         case SVARV_STATE_ERROR: return "Error";
         default: return "Unknown";
     }
+}
+
+String svarvPlatformToString(SvarvPlatformType platform) {
+    switch (platform) {
+        case SVARV_PLATFORM_AUTO: return "Auto-Detect";
+        case SVARV_PLATFORM_ESP32_BUILTIN: return "ESP32 Built-in CAN";
+        case SVARV_PLATFORM_STM32_BUILTIN: return "STM32 Built-in CAN";
+        case SVARV_PLATFORM_MCP2515: return "MCP2515 External CAN";
+        default: return "Unknown Platform";
+    }
+}
+
+SvarvPlatformType svarvDetectPlatform() {
+#if defined(ESP32)
+    return SVARV_PLATFORM_ESP32_BUILTIN;
+#elif defined(STM32_CORE_VERSION) || defined(ARDUINO_ARCH_STM32)
+    return SVARV_PLATFORM_STM32_BUILTIN;
+#else
+    return SVARV_PLATFORM_MCP2515;
+#endif
 }
 
 // ============================================================================
@@ -383,41 +599,144 @@ void SvarvMotor::handleTimeout() {
 // ============================================================================
 
 SvarvMotionControl::SvarvMotionControl()
-    : initialized_(false), debug_enabled_(false), messages_sent_(0), 
-      messages_received_(0), can_errors_(0), last_update_time_(0), last_scan_time_(0) {
+    : can_interface_(nullptr), initialized_(false), debug_enabled_(false), 
+      messages_sent_(0), messages_received_(0), can_errors_(0), 
+      last_update_time_(0), last_scan_time_(0) {
 }
 
 SvarvMotionControl::~SvarvMotionControl() {
     // Clean up motors
+#ifdef ARDUINO_ARCH_AVR
+    for (int i = 0; i < SVARV_MAX_MOTORS; i++) {
+        if (motors_.data[i].used) {
+            delete motors_.data[i].value;
+        }
+    }
+#else
     for (auto& pair : motors_) {
         delete pair.second;
     }
+#endif
     motors_.clear();
+    
+    delete can_interface_;
 }
 
+bool SvarvMotionControl::begin(uint32_t can_speed) {
+    // Auto-detect platform and use default settings
+    SvarvPlatformConfig config;
+    config.platform = detectPlatform();
+    config.can_speed = can_speed;
+    
+    return begin(config);
+}
+
+#ifdef SVARV_PLATFORM_ESP32
 bool SvarvMotionControl::begin(uint32_t can_speed, int tx_pin, int rx_pin) {
+    SvarvPlatformConfig config;
+    config.platform = SVARV_PLATFORM_ESP32_BUILTIN;
+    config.can_speed = can_speed;
+    config.esp32_tx_pin = tx_pin;
+    config.esp32_rx_pin = rx_pin;
+    
+    return begin(config);
+}
+#endif
+
+#ifdef SVARV_PLATFORM_STM32
+bool SvarvMotionControl::begin(uint32_t can_speed, int can_instance) {
+    SvarvPlatformConfig config;
+    config.platform = SVARV_PLATFORM_STM32_BUILTIN;
+    config.can_speed = can_speed;
+    config.stm32_can_instance = can_instance;
+    
+    return begin(config);
+}
+#endif
+
+#if defined(SVARV_PLATFORM_AVR) || defined(SVARV_PLATFORM_GENERIC)
+bool SvarvMotionControl::begin(uint32_t can_speed, int cs_pin, int int_pin, uint32_t crystal_freq) {
+    SvarvPlatformConfig config;
+    config.platform = SVARV_PLATFORM_MCP2515;
+    config.can_speed = can_speed;
+    config.mcp2515_cs_pin = cs_pin;
+    config.mcp2515_int_pin = int_pin;
+    config.mcp2515_crystal_freq = crystal_freq;
+    
+    return begin(config);
+}
+#endif
+
+bool SvarvMotionControl::begin(const SvarvPlatformConfig& config) {
     debugPrint("Svarv Motion Control v" + String(SVARV_VERSION) + " Initializing...");
+    debugPrint("Platform: " + svarvPlatformToString(config.platform));
     
-    // Configure CAN pins and settings
-    ESP32Can.setPins(tx_pin, rx_pin);
-    ESP32Can.setRxQueueSize(32);
-    ESP32Can.setTxQueueSize(16);
-    ESP32Can.setSpeed(ESP32Can.convertSpeed(can_speed));
+    platform_config_ = config;
     
-    // Initialize CAN bus
-    if (!ESP32Can.begin()) {
-        debugPrint("ERROR: CAN bus initialization failed!");
+    // Create appropriate CAN interface
+    can_interface_ = createCANInterface(config.platform);
+    if (!can_interface_) {
+        debugPrint("ERROR: Failed to create CAN interface for platform!");
         return false;
     }
     
-    debugPrint("CAN bus initialized @ " + String(can_speed) + " bps");
-    debugPrint("TX Pin: " + String(tx_pin) + ", RX Pin: " + String(rx_pin));
+    // Initialize CAN interface
+    if (!can_interface_->begin(config)) {
+        debugPrint("ERROR: CAN interface initialization failed!");
+        delete can_interface_;
+        can_interface_ = nullptr;
+        return false;
+    }
+    
+    debugPrint("CAN interface initialized: " + can_interface_->getPlatformName());
+    debugPrint("CAN Speed: " + String(config.can_speed) + " bps");
     
     initialized_ = true;
     last_update_time_ = millis();
     
     debugPrint("Svarv Motion Control ready!");
     return true;
+}
+
+SvarvPlatformType SvarvMotionControl::detectPlatform() {
+    return svarvDetectPlatform();
+}
+
+SvarvCANInterface* SvarvMotionControl::createCANInterface(SvarvPlatformType platform) {
+    switch (platform) {
+#ifdef SVARV_PLATFORM_ESP32
+        case SVARV_PLATFORM_ESP32_BUILTIN:
+        case SVARV_PLATFORM_AUTO:
+            #if defined(ESP32)
+            return new SvarvCANInterface_ESP32();
+            #endif
+            break;
+#endif
+
+#ifdef SVARV_PLATFORM_STM32
+        case SVARV_PLATFORM_STM32_BUILTIN:
+            #if defined(STM32_CORE_VERSION) || defined(ARDUINO_ARCH_STM32)
+            return new SvarvCANInterface_STM32();
+            #endif
+            break;
+#endif
+
+#if defined(SVARV_PLATFORM_AVR) || defined(SVARV_PLATFORM_GENERIC)
+        case SVARV_PLATFORM_MCP2515:
+            return new SvarvCANInterface_MCP2515();
+            break;
+#endif
+
+        default:
+            // Fall back to MCP2515 for unknown platforms
+#if defined(SVARV_PLATFORM_AVR) || defined(SVARV_PLATFORM_GENERIC)
+            return new SvarvCANInterface_MCP2515();
+#else
+            return nullptr;
+#endif
+    }
+    
+    return nullptr;
 }
 
 SvarvMotor& SvarvMotionControl::addMotor(uint8_t node_id) {
@@ -429,11 +748,18 @@ SvarvMotor& SvarvMotionControl::addMotor(uint8_t node_id) {
     }
     
     // Check if motor already exists
+#ifdef ARDUINO_ARCH_AVR
+    if (motors_.find(node_id)) {
+        debugPrint("Motor with node ID " + String(node_id) + " already exists");
+        return motors_[node_id];
+    }
+#else
     auto it = motors_.find(node_id);
     if (it != motors_.end()) {
         debugPrint("Motor with node ID " + String(node_id) + " already exists");
         return *(it->second);
     }
+#endif
     
     // Create new motor
     SvarvMotor* motor = new SvarvMotor(node_id, this);
@@ -448,6 +774,14 @@ SvarvMotor& SvarvMotionControl::addMotor(uint8_t node_id) {
 }
 
 bool SvarvMotionControl::removeMotor(uint8_t node_id) {
+#ifdef ARDUINO_ARCH_AVR
+    if (motors_.find(node_id)) {
+        delete motors_[node_id];
+        motors_.erase(node_id);
+        debugPrint("Removed motor with node ID: " + String(node_id));
+        return true;
+    }
+#else
     auto it = motors_.find(node_id);
     if (it != motors_.end()) {
         delete it->second;
@@ -455,24 +789,37 @@ bool SvarvMotionControl::removeMotor(uint8_t node_id) {
         debugPrint("Removed motor with node ID: " + String(node_id));
         return true;
     }
+#endif
     return false;
 }
 
 SvarvMotor* SvarvMotionControl::getMotor(uint8_t node_id) {
+#ifdef ARDUINO_ARCH_AVR
+    return motors_.find(node_id) ? &motors_[node_id] : nullptr;
+#else
     auto it = motors_.find(node_id);
     return (it != motors_.end()) ? it->second : nullptr;
+#endif
 }
 
 std::vector<SvarvMotor*> SvarvMotionControl::getAllMotors() {
     std::vector<SvarvMotor*> result;
+#ifdef ARDUINO_ARCH_AVR
+    for (int i = 0; i < SVARV_MAX_MOTORS; i++) {
+        if (motors_.data[i].used) {
+            result.push_back(motors_.data[i].value);
+        }
+    }
+#else
     for (auto& pair : motors_) {
         result.push_back(pair.second);
     }
+#endif
     return result;
 }
 
 void SvarvMotionControl::update() {
-    if (!initialized_) {
+    if (!initialized_ || !can_interface_) {
         return;
     }
     
@@ -486,9 +833,10 @@ void SvarvMotionControl::update() {
     
     // Request status updates periodically
     if (current_time - last_update_time_ > STATUS_REQUEST_INTERVAL_MS) {
-        for (auto& pair : motors_) {
-            if (pair.second->isConnected()) {
-                pair.second->requestStatusUpdate();
+        auto motors = getAllMotors();
+        for (auto* motor : motors) {
+            if (motor && motor->isConnected()) {
+                motor->requestStatusUpdate();
             }
         }
         last_update_time_ = current_time;
@@ -497,8 +845,9 @@ void SvarvMotionControl::update() {
 
 int SvarvMotionControl::emergencyStopAll() {
     int count = 0;
-    for (auto& pair : motors_) {
-        if (pair.second->emergencyStop()) {
+    auto motors = getAllMotors();
+    for (auto* motor : motors) {
+        if (motor && motor->emergencyStop()) {
             count++;
         }
     }
@@ -508,8 +857,9 @@ int SvarvMotionControl::emergencyStopAll() {
 
 int SvarvMotionControl::enableAll() {
     int count = 0;
-    for (auto& pair : motors_) {
-        if (pair.second->enable()) {
+    auto motors = getAllMotors();
+    for (auto* motor : motors) {
+        if (motor && motor->enable()) {
             count++;
         }
     }
@@ -519,8 +869,9 @@ int SvarvMotionControl::enableAll() {
 
 int SvarvMotionControl::disableAll() {
     int count = 0;
-    for (auto& pair : motors_) {
-        if (pair.second->disable()) {
+    auto motors = getAllMotors();
+    for (auto* motor : motors) {
+        if (motor && motor->disable()) {
             count++;
         }
     }
@@ -547,9 +898,10 @@ std::vector<uint8_t> SvarvMotionControl::scanForMotors(unsigned long timeout_ms)
     }
     
     // Check which motors responded
-    for (auto& pair : motors_) {
-        if (pair.second->isConnected()) {
-            discovered_nodes.push_back(pair.first);
+    auto motors = getAllMotors();
+    for (auto* motor : motors) {
+        if (motor && motor->isConnected()) {
+            discovered_nodes.push_back(motor->getNodeId());
         }
     }
     
@@ -586,8 +938,9 @@ int SvarvMotionControl::autoConfigureMotors(uint8_t start_id, uint8_t max_motors
 
 int SvarvMotionControl::getConnectedMotorCount() const {
     int count = 0;
-    for (const auto& pair : motors_) {
-        if (pair.second->isConnected()) {
+    auto motors = const_cast<SvarvMotionControl*>(this)->getAllMotors();
+    for (auto* motor : motors) {
+        if (motor && motor->isConnected()) {
             count++;
         }
     }
@@ -601,6 +954,10 @@ void SvarvMotionControl::getCANStatistics(uint32_t& messages_sent, uint32_t& mes
 }
 
 bool SvarvMotionControl::isCANHealthy() const {
+    if (!can_interface_ || !can_interface_->isAvailable()) {
+        return false;
+    }
+    
     // Consider CAN healthy if error rate is low
     uint32_t total_messages = messages_sent_ + messages_received_;
     if (total_messages == 0) return true;
@@ -609,9 +966,16 @@ bool SvarvMotionControl::isCANHealthy() const {
     return error_rate < 0.05f; // Less than 5% error rate
 }
 
+String SvarvMotionControl::getPlatformInfo() const {
+    if (can_interface_) {
+        return can_interface_->getPlatformName();
+    }
+    return "No CAN Interface";
+}
+
 bool SvarvMotionControl::sendCANMessage(uint8_t node_id, uint8_t function_id, uint8_t cmd, 
                                        const uint8_t* data, uint8_t len) {
-    if (!initialized_) {
+    if (!initialized_ || !can_interface_) {
         return false;
     }
     
@@ -621,17 +985,20 @@ bool SvarvMotionControl::sendCANMessage(uint8_t node_id, uint8_t function_id, ui
         return false;
     }
     
-    CanFrame frame = {0};
-    frame.identifier = (function_id << 8) | node_id;
-    frame.extd = 0;
-    frame.data_length_code = len + 1;
-    frame.data[0] = cmd;
+    SvarvCANMessage msg;
+    msg.id = (function_id << 8) | node_id;
+    msg.extended = false;
+    msg.rtr = false;
+    msg.length = len + 1;
+    msg.data[0] = cmd;
     
     if (data && len > 0) {
-        memcpy(&frame.data[1], data, len);
+        for (int i = 0; i < len && i < 7; i++) {
+            msg.data[i + 1] = data[i];
+        }
     }
     
-    bool success = ESP32Can.writeFrame(frame);
+    bool success = can_interface_->sendMessage(msg);
     
     if (success) {
         messages_sent_++;
@@ -644,27 +1011,27 @@ bool SvarvMotionControl::sendCANMessage(uint8_t node_id, uint8_t function_id, ui
 }
 
 void SvarvMotionControl::processIncomingMessages() {
-    CanFrame rxFrame;
+    SvarvCANMessage msg;
     
-    while (ESP32Can.readFrame(rxFrame, 1)) {
+    while (can_interface_ && can_interface_->receiveMessage(msg)) {
         messages_received_++;
         
-        uint32_t msgID = rxFrame.identifier;
+        uint32_t msgID = msg.id;
         uint8_t function_id = (msgID >> 8) & 0x07;
         uint8_t source_node = msgID & 0xFF;
         
         // Route message based on function type
         switch (function_id) {
             case CAN_FUNCTION_RESPONSE:
-                handleResponseMessage(source_node, rxFrame);
+                handleResponseMessage(source_node, msg);
                 break;
                 
             case CAN_FUNCTION_TELEMETRY:
-                handleTelemetryMessage(source_node, rxFrame);
+                handleTelemetryMessage(source_node, msg);
                 break;
                 
             case CAN_FUNCTION_ERROR:
-                handleErrorMessage(source_node, rxFrame);
+                handleErrorMessage(source_node, msg);
                 break;
                 
             default:
@@ -674,36 +1041,38 @@ void SvarvMotionControl::processIncomingMessages() {
     }
 }
 
-void SvarvMotionControl::handleResponseMessage(uint8_t node_id, const CanFrame& frame) {
+void SvarvMotionControl::handleResponseMessage(uint8_t node_id, const SvarvCANMessage& msg) {
     SvarvMotor* motor = getMotor(node_id);
     if (!motor) {
         // Auto-create motor if we receive a response from unknown node
         motor = &addMotor(node_id);
     }
     
-    if (frame.data_length_code >= 1) {
-        uint8_t cmd = frame.data[0];
+    if (msg.length >= 1) {
+        uint8_t cmd = msg.data[0];
         
-        if (cmd == CMD_QUERY_STATUS && frame.data_length_code >= 7) {
+        if (cmd == CMD_QUERY_STATUS && msg.length >= 7) {
             // Parse status response
             SvarvMotorStatus new_status = motor->getStatus();
             
-            uint8_t msg_num = frame.data[1];
+            uint8_t msg_num = msg.data[1];
             if (msg_num == 1) {
                 // First status message
-                new_status.control_mode = static_cast<SvarvControlMode>(frame.data[2]);
-                new_status.enabled = frame.data[3] != 0;
-                new_status.calibrated = frame.data[4] != 0;
-                new_status.initializing = frame.data[5] != 0;
-                new_status.error_code = static_cast<SvarvErrorCode>(frame.data[6]);
-                new_status.error_count = frame.data[7];
+                new_status.control_mode = static_cast<SvarvControlMode>(msg.data[2]);
+                new_status.enabled = msg.data[3] != 0;
+                new_status.calibrated = msg.data[4] != 0;
+                new_status.initializing = msg.data[5] != 0;
+                new_status.error_code = static_cast<SvarvErrorCode>(msg.data[6]);
+                if (msg.length >= 8) {
+                    new_status.error_count = msg.data[7];
+                }
                 
                 motor->updateStatus(new_status);
-            } else if (msg_num == 2 && frame.data_length_code >= 8) {
+            } else if (msg_num == 2 && msg.length >= 8) {
                 // Second status message with position and velocity
-                memcpy(&new_status.position, &frame.data[2], 4);
+                memcpy(&new_status.position, &msg.data[2], 4);
                 int16_t scaled_velocity;
-                memcpy(&scaled_velocity, &frame.data[6], 2);
+                memcpy(&scaled_velocity, &msg.data[6], 2);
                 new_status.velocity = scaled_velocity / 100.0f;
                 
                 motor->updateStatus(new_status);
@@ -712,32 +1081,32 @@ void SvarvMotionControl::handleResponseMessage(uint8_t node_id, const CanFrame& 
     }
 }
 
-void SvarvMotionControl::handleTelemetryMessage(uint8_t node_id, const CanFrame& frame) {
+void SvarvMotionControl::handleTelemetryMessage(uint8_t node_id, const SvarvCANMessage& msg) {
     SvarvMotor* motor = getMotor(node_id);
-    if (!motor || frame.data_length_code < 1) {
+    if (!motor || msg.length < 1) {
         return;
     }
     
-    uint8_t telemetry_type = frame.data[0];
+    uint8_t telemetry_type = msg.data[0];
     SvarvMotorStatus new_status = motor->getStatus();
     
     switch (telemetry_type) {
         case TELEMETRY_HEARTBEAT:
-            if (frame.data_length_code >= 3) {
-                new_status.control_mode = static_cast<SvarvControlMode>(frame.data[1]);
-                new_status.error_code = static_cast<SvarvErrorCode>(frame.data[2]);
+            if (msg.length >= 3) {
+                new_status.control_mode = static_cast<SvarvControlMode>(msg.data[1]);
+                new_status.error_code = static_cast<SvarvErrorCode>(msg.data[2]);
                 motor->updateStatus(new_status);
             }
             break;
             
         case TELEMETRY_MOTOR_STATE:
-            if (frame.data_length_code >= 8) {
-                memcpy(&new_status.position, &frame.data[1], 4);
+            if (msg.length >= 8) {
+                memcpy(&new_status.position, &msg.data[1], 4);
                 int16_t scaled_velocity;
-                memcpy(&scaled_velocity, &frame.data[5], 2);
+                memcpy(&scaled_velocity, &msg.data[5], 2);
                 new_status.velocity = scaled_velocity / 100.0f;
                 
-                uint8_t flags = frame.data[7];
+                uint8_t flags = msg.data[7];
                 new_status.calibrated = (flags & 0x01) != 0;
                 new_status.enabled = (flags & 0x02) != 0;
                 
@@ -746,13 +1115,13 @@ void SvarvMotionControl::handleTelemetryMessage(uint8_t node_id, const CanFrame&
             break;
             
         case TELEMETRY_MOTOR_POWER:
-            if (frame.data_length_code >= 7) {
+            if (msg.length >= 7) {
                 int16_t scaled_current;
-                memcpy(&scaled_current, &frame.data[1], 2);
+                memcpy(&scaled_current, &msg.data[1], 2);
                 new_status.current_q = scaled_current / 100.0f;
                 
                 uint16_t scaled_voltage;
-                memcpy(&scaled_voltage, &frame.data[3], 2);
+                memcpy(&scaled_voltage, &msg.data[3], 2);
                 new_status.voltage_q = scaled_voltage / 100.0f;
                 
                 motor->updateStatus(new_status);
@@ -760,27 +1129,27 @@ void SvarvMotionControl::handleTelemetryMessage(uint8_t node_id, const CanFrame&
             break;
             
         case TELEMETRY_DIAGNOSTICS:
-            if (frame.data_length_code >= 5) {
-                memcpy(&new_status.loop_time_us, &frame.data[1], 2);
-                memcpy(&new_status.error_count, &frame.data[3], 2);
+            if (msg.length >= 5) {
+                memcpy(&new_status.loop_time_us, &msg.data[1], 2);
+                memcpy(&new_status.error_count, &msg.data[3], 2);
                 motor->updateStatus(new_status);
             }
             break;
     }
 }
 
-void SvarvMotionControl::handleErrorMessage(uint8_t node_id, const CanFrame& frame) {
+void SvarvMotionControl::handleErrorMessage(uint8_t node_id, const SvarvCANMessage& msg) {
     SvarvMotor* motor = getMotor(node_id);
-    if (!motor || frame.data_length_code < 1) {
+    if (!motor || msg.length < 1) {
         return;
     }
     
-    SvarvErrorCode error_code = static_cast<SvarvErrorCode>(frame.data[0]);
+    SvarvErrorCode error_code = static_cast<SvarvErrorCode>(msg.data[0]);
     
     SvarvMotorStatus new_status = motor->getStatus();
     new_status.error_code = error_code;
-    if (frame.data_length_code >= 3) {
-        new_status.error_count = (frame.data[1] << 8) | frame.data[2];
+    if (msg.length >= 3) {
+        new_status.error_count = (msg.data[1] << 8) | msg.data[2];
     }
     
     motor->updateStatus(new_status);
@@ -792,8 +1161,11 @@ void SvarvMotionControl::handleErrorMessage(uint8_t node_id, const CanFrame& fra
 }
 
 void SvarvMotionControl::updateMotorTimeouts() {
-    for (auto& pair : motors_) {
-        pair.second->handleTimeout();
+    auto motors = getAllMotors();
+    for (auto* motor : motors) {
+        if (motor) {
+            motor->handleTimeout();
+        }
     }
 }
 
