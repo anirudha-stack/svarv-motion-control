@@ -1,184 +1,16 @@
-### Motor Discovery & Auto-Configuration
-
-```cpp
-// Scan for motors on the CAN bus
-auto discovered = svarv.scanForMotors(5000); // 5 second timeout
-
-Serial.println("Found " + String(discovered.size()) + " motors:");
-for (uint8_t nodeId : discovered) {
-  Serial.println("  - Motor " + String(nodeId));
-}
-
-// Auto-configure unconfigured motors (node ID = 0)
-int configured = svarv.autoConfigureMotors(1, 10); // Start from ID 1, max 10 motors
-Serial.println("Configured " + String(configured) + " motors");
-```
-
-### Node ID Configuration
-
-Setting up Node IDs for new or unconfigured motors:
-
-```cpp
-// Configure a single unconfigured motor (Node ID = 0)
-void setupNewMotor() {
-  Serial.println("Setting up new motor with Node ID 1...");
-  
-  if (svarv.setMotorNodeId(0, 1)) { // From unconfigured (0) to Node ID 1
-    delay(1000); // Wait for motor to reconfigure
-    
-    // Verify the new motor responds
-    SvarvMotor& motor = svarv.addMotor(1);
-    if (motor.isConnected()) {
-      Serial.println("✅ Motor configured successfully!");
-      motor.saveConfig(); // Save to EEPROM
-    }
-  }
-}
-
-// Change existing motor's Node ID
-void changeMotorNodeId(uint8_t currentId, uint8_t newId) {
-  if (svarv.setMotorNodeId(currentId, newId)) {
-    Serial.println("Node ID changed from " + String(currentId) + " to " + String(newId));
-    
-    // Update motor in system
-    svarv.removeMotor(currentId);
-    SvarvMotor& motor = svarv.addMotor(newId);
-    motor.saveConfig();
-  }
-}
-
-// Bulk configuration example
-void setupMultipleMotors() {
-  Serial.println("Configuring multiple motors...");
-  
-  // Configure 3 unconfigured motors with Node IDs 1, 2, 3
-  for (uint8_t nodeId = 1; nodeId <= 3; nodeId++) {
-    if (svarv.setMotorNodeId(0, nodeId)) {
-      Serial.println("Configured motor with Node ID " + String(nodeId));
-      delay(500); // Brief delay between configurations
-    }
-  }
-  
-  // Verify all motors
-  delay(2000);
-  auto discovered = svarv.scanForMotors(3000);
-  Serial.println("Found " + String(discovered.size()) + " configured motors");
-}
-```
-```
-
-### Interactive Node ID Setup
-
-For a complete interactive Node ID configuration tool, see the [Node_ID_Setup_Example.ino](examples/Node_ID_Setup_Example/Node_ID_Setup_Example.ino) which provides:
-
-- **Motor Discovery**: Scan and identify all motors on the bus
-- **New Motor Setup**: Configure unconfigured motors (Node ID = 0)
-- **Bulk Configuration**: Auto-assign sequential Node IDs to multiple motors
-- **ID Changes**: Change existing motor Node IDs
-- **Factory Reset**: Reset motors to default configuration
-- **Communication Testing**: Verify motor connectivity and status
-
-```cpp
-// Example interactive menu from Node_ID_Setup_Example.ino
-void setupNodeIds() {
-  Serial.println("=== NODE ID CONFIGURATION MENU ===");
-  Serial.println("1. scan  - Scan for motors and show Node IDs");
-  Serial.println("2. set   - Set Node ID for unconfigured motor");
-  Serial.println("3. auto  - Auto-configure multiple motors");
-  Serial.println("4. change- Change existing motor's Node ID");
-  Serial.println("5. reset - Factory reset motor");
-  Serial.println("6. test  - Test communication with motor");
-}
-```
-
-### Node ID Configuration
-
-Setting up Node IDs for new or unconfigured motors:
-
-```cpp
-// Configure a single unconfigured motor (Node ID = 0)
-bool setMotorNodeId(uint8_t newNodeId) {
-  uint8_t cmd = 0x51; // CMD_SYS_SET_NODE_ID
-  return svarv.sendCANMessage(0, 0b110, cmd, &newNodeId, 1);
-}
-
-// Example: Set Node ID for new motor
-void setupNewMotor() {
-  Serial.println("Setting up new motor with Node ID 1...");
-  
-  if (setMotorNodeId(1)) {
-    delay(1000); // Wait for motor to reconfigure
-    
-    // Verify the new motor responds
-    SvarvMotor& motor = svarv.addMotor(1);
-    if (motor.isConnected()) {
-      Serial.println("✅ Motor configured successfully!");
-      motor.saveConfig(); // Save to EEPROM
-    }
-  }
-}
-
-// Change existing motor's Node ID
-void changeMotorNodeId(uint8_t currentId, uint8_t newId) {
-  uint8_t cmd = 0x51; // CMD_SYS_SET_NODE_ID
-  if (svarv.sendCANMessage(currentId, 0b110, cmd, &newId, 1)) {
-    Serial.println("Node ID changed from " + String(currentId) + " to " + String(newId));
-    
-    // Update motor in system
-    svarv.removeMotor(currentId);
-    SvarvMotor& motor = svarv.addMotor(newId);
-    motor.saveConfig();
-  }
-}
-```
-
-### Interactive Node ID Setup
-
-For a complete interactive Node ID configuration tool, see the [Node_ID_Setup_Example.ino](examples/Node_ID_Setup_Example/Node_ID_Setup_Example.ino) which provides:
-
-- **Motor Discovery**: Scan and identify all motors on the bus
-- **New Motor Setup**: Configure unconfigured motors (Node ID = 0)
-- **Bulk Configuration**: Auto-assign sequential Node IDs to multiple motors
-- **ID Changes**: Change existing motor Node IDs
-- **Factory Reset**: Reset motors to default configuration
-- **Communication Testing**: Verify motor connectivity an# Svarv Motion Control Library
+# Svarv Motion Control Library
 
 [![Arduino Library](https://img.shields.io/badge/Arduino-Library-blue.svg)](https://www.arduino.cc/)
 [![Cross Platform](https://img.shields.io/badge/Platform-ESP32%20%7C%20STM32%20%7C%20AVR-green.svg)](https://github.com/svarv-robotics/svarv-motion-control)
 [![CAN Bus](https://img.shields.io/badge/Interface-CAN%20Bus-orange.svg)](https://en.wikipedia.org/wiki/CAN_bus)
 [![Version](https://img.shields.io/badge/Version-2.0.0-brightgreen.svg)](https://github.com/svarv-robotics/svarv-motion-control)
 
-A comprehensive cross-platform Arduino library for controlling CAN-based BLDC motor controllers. Inspired by industry-leading libraries like SimpleFOC, ODrive, and VESC, this library provides a simple yet powerful interface for advanced motor control applications across multiple hardware platforms.
-
-## 🚀 New in Version 2.0 - Cross-Platform Support
-
-### **Universal Compatibility**
-- **ESP32**: Built-in CAN via ESP32-TWAI-CAN library (original platform)
-- **STM32**: Built-in CAN via STM32duino library (new!)
-- **Arduino AVR**: MCP2515 external CAN controller support (new!)
-- **Generic Platforms**: Universal MCP2515 support (new!)
-
-### **Automatic Platform Detection**
-The library now automatically detects your hardware platform and configures the appropriate CAN interface. Your existing ESP32 code continues to work unchanged, while new platforms are seamlessly supported.
-
-### **Memory Optimization**
-Platform-specific optimizations ensure optimal performance on resource-constrained devices like Arduino Uno while maintaining full features on powerful platforms like ESP32.
-
-## 🎯 Supported Platforms
-
-| Platform | CAN Interface | Memory Usage | Max Motors | Performance |
-|----------|---------------|--------------|------------|-------------|
-| **ESP32** | Built-in CAN (TWAI) | ~8KB | 255 | Excellent |
-| **STM32** | Built-in CAN peripheral | ~6KB | 255 | Excellent |
-| **Arduino AVR** | MCP2515 (SPI) | ~3KB | 8* | Good |
-| **Generic** | MCP2515 (SPI) | ~4KB | 255 | Good |
-
-*Memory-optimized for Arduino Uno/Nano
+A comprehensive Arduino library for controlling CAN-based BLDC motor controllers. Inspired by industry-leading libraries like SimpleFOC, ODrive, and VESC, this library provides a simple yet powerful interface for advanced motor control applications with cross-platform compatibility.
 
 ## 🚀 Features
 
 ### **Multi-Motor Control**
-- Control up to 255 motors on a single CAN bus (8 on Arduino AVR)
+- Control up to 255 motors on a single CAN bus
 - Automatic motor discovery and configuration
 - Synchronized coordinated movements
 - Individual motor status monitoring
@@ -200,36 +32,31 @@ Platform-specific optimizations ensure optimal performance on resource-constrain
 - **Non-blocking Operations** - Asynchronous communication with callback support
 - **Configuration Management** - Save/load parameters to motor EEPROM
 - **Safety Systems** - Emergency stops, timeout protection, limit enforcement
-- **Cross-Platform Compatibility** - Works seamlessly across different hardware
+
+### **Cross-Platform Compatibility** *(New in v2.0)*
+- **ESP32**: Built-in CAN via ESP32-TWAI-CAN library
+- **STM32**: Built-in CAN via STM32duino library
+- **Arduino AVR**: MCP2515 external CAN controller support
+- **Generic Platforms**: Universal MCP2515 support
+- **Automatic Platform Detection** with intelligent configuration
 
 ## 📋 Requirements
 
-### Hardware by Platform
-
-#### ESP32 Platforms (Original Support)
-- **ESP32** with built-in CAN (ESP32-C3, ESP32-S3, ESP32 Classic)
+### Hardware
+- **ESP32** with built-in CAN (ESP32-C3, ESP32-S3, ESP32 Classic) *OR*
+- **STM32** with built-in CAN (F1, F4, F7, H7 series) *OR*
+- **Arduino AVR** (Uno, Mega, Nano) with MCP2515 CAN controller *OR*
+- **Generic Arduino-compatible** board with MCP2515 shield
 - **CAN Transceiver** (SN65HVD230, TJA1050, or similar)
-- **120Ω termination resistors** at both ends of CAN bus
-
-#### STM32 Platforms (New!)
-- **STM32F1, STM32F4, STM32F7, STM32H7** with built-in CAN
-- **CAN Transceiver** (SN65HVD230, TJA1050, or similar)
-- **120Ω termination resistors** at both ends of CAN bus
-
-#### Arduino AVR Platforms (New!)
-- **Arduino Uno, Mega, Nano** or compatible
-- **MCP2515 CAN Controller Module**
-- **120Ω termination resistors** at both ends of CAN bus
-
-#### All Platforms
 - **Svarv BLDC Motor Controller(s)** with firmware v1.2 or later
+- **120Ω termination resistors** at both ends of CAN bus
 
 ### Software
 - **Arduino IDE** 1.8.0+ or **PlatformIO**
 - Platform-specific libraries (automatically installed):
-  - ESP32: **ESP32-TWAI-CAN library**
-  - STM32: **STM32duino** (built-in CAN)
-  - AVR/Generic: **mcp_can library**
+  - ESP32: ESP32-TWAI-CAN library
+  - STM32: STM32duino (built-in CAN)
+  - AVR/Generic: mcp_can library
 
 ## 🔧 Installation
 
@@ -238,8 +65,6 @@ Platform-specific optimizations ensure optimal performance on resource-constrain
 2. Go to **Sketch → Include Library → Manage Libraries**
 3. Search for "Svarv Motion Control"
 4. Click **Install**
-
-The library automatically installs platform-specific dependencies based on your selected board.
 
 ### Method 2: Manual Installation
 1. Download the latest release from [GitHub](https://github.com/svarv-robotics/svarv-motion-control)
@@ -255,7 +80,7 @@ lib_deps =
 
 ## 🚀 Quick Start
 
-### Universal Example (Auto-Platform Detection)
+### Basic Single Motor Control
 
 ```cpp
 #include "SvarvMotionControl.h"
@@ -266,7 +91,7 @@ SvarvMotor motor1;
 void setup() {
   Serial.begin(115200);
   
-  // Auto-detect platform and initialize CAN bus at 1 Mbps
+  // Initialize CAN bus at 1 Mbps (auto-detects platform)
   if (!svarv.begin(1000000)) {
     Serial.println("CAN initialization failed!");
     while(1);
@@ -277,8 +102,6 @@ void setup() {
   
   // Set position control mode
   motor1.setControlMode(SVARV_MODE_POSITION);
-  
-  Serial.println("Platform: " + svarv.getPlatformInfo());
 }
 
 void loop() {
@@ -294,56 +117,6 @@ void loop() {
 }
 ```
 
-### Platform-Specific Quick Start
-
-#### ESP32 with Custom Pins
-```cpp
-void setup() {
-  Serial.begin(115200);
-  
-  // ESP32 with custom CAN pins
-  if (!svarv.begin(1000000, 4, 5)) { // TX=GPIO4, RX=GPIO5
-    Serial.println("CAN initialization failed!");
-    while(1);
-  }
-  
-  motor1 = svarv.addMotor(1);
-  motor1.setControlMode(SVARV_MODE_POSITION);
-}
-```
-
-#### STM32 with CAN2
-```cpp
-void setup() {
-  Serial.begin(115200);
-  
-  // STM32 using CAN2 instead of CAN1
-  if (!svarv.begin(1000000, 2)) {
-    Serial.println("CAN initialization failed!");
-    while(1);
-  }
-  
-  motor1 = svarv.addMotor(1);
-  motor1.setControlMode(SVARV_MODE_POSITION);
-}
-```
-
-#### Arduino + MCP2515
-```cpp
-void setup() {
-  Serial.begin(115200);
-  
-  // Arduino with MCP2515: speed, CS pin, INT pin, crystal freq
-  if (!svarv.begin(1000000, 10, 2, MCP_8MHZ)) {
-    Serial.println("CAN initialization failed!");
-    while(1);
-  }
-  
-  motor1 = svarv.addMotor(1);
-  motor1.setControlMode(SVARV_MODE_POSITION);
-}
-```
-
 ### Multi-Motor Coordination
 
 ```cpp
@@ -354,7 +127,7 @@ SvarvMotor motor1, motor2, motor3;
 
 void setup() {
   Serial.begin(115200);
-  svarv.begin(1000000); // Auto-detect platform
+  svarv.begin(1000000);
   
   // Auto-discover motors
   auto discovered = svarv.scanForMotors(5000);
@@ -393,6 +166,28 @@ void loop() {
 }
 ```
 
+## 🎯 Platform-Specific Setup
+
+The library automatically detects your platform, but you can also specify platform-specific settings:
+
+### ESP32 with Custom Pins
+```cpp
+// ESP32 with custom CAN pins
+svarv.begin(1000000, 4, 5); // TX=GPIO4, RX=GPIO5
+```
+
+### STM32 with CAN2
+```cpp
+// STM32 using CAN2 instead of CAN1
+svarv.begin(1000000, 2);
+```
+
+### Arduino + MCP2515
+```cpp
+// Arduino with MCP2515: speed, CS pin, INT pin, crystal freq
+svarv.begin(1000000, 10, 2, MCP_8MHZ);
+```
+
 ## 📖 Detailed Examples
 
 The library includes comprehensive examples demonstrating various features:
@@ -415,13 +210,19 @@ The library includes comprehensive examples demonstrating various features:
 - Performance analysis
 - Automated tuning suggestions
 
-### [Cross_Platform_Example.ino](examples/Cross_Platform_Example/Cross_Platform_Example.ino) (New!)
+### [Advanced_Control_Patterns.ino](examples/Advanced_Control_Patterns/Advanced_Control_Patterns.ino)
+- Trajectory generation and following
+- Velocity profiling with acceleration limits
+- Force control applications
+- Impedance control for compliant motion
+
+### [Cross_Platform_Example.ino](examples/Cross_Platform_Example/Cross_Platform_Example.ino)
 - Platform auto-detection demonstration
 - Platform-specific configuration examples
 - Troubleshooting and diagnostics
 - Cross-platform compatibility testing
 
-### [Node_ID_Setup_Example.ino](examples/Node_ID_Setup_Example/Node_ID_Setup_Example.ino) (New!)
+### [Node_ID_Setup_Example.ino](examples/Node_ID_Setup_Example/Node_ID_Setup_Example.ino)
 - Interactive Node ID configuration tool
 - Setting up new/unconfigured motors (Node ID = 0)
 - Auto-configuring multiple motors with sequential IDs
@@ -585,6 +386,82 @@ int configured = svarv.autoConfigureMotors(1, 10); // Start from ID 1, max 10 mo
 Serial.println("Configured " + String(configured) + " motors");
 ```
 
+### Node ID Configuration
+
+Setting up Node IDs for new or unconfigured motors:
+
+```cpp
+// Configure a single unconfigured motor (Node ID = 0)
+void setupNewMotor() {
+  Serial.println("Setting up new motor with Node ID 1...");
+  
+  if (svarv.setMotorNodeId(0, 1)) { // From unconfigured (0) to Node ID 1
+    delay(1000); // Wait for motor to reconfigure
+    
+    // Verify the new motor responds
+    SvarvMotor& motor = svarv.addMotor(1);
+    if (motor.isConnected()) {
+      Serial.println("✅ Motor configured successfully!");
+      motor.saveConfig(); // Save to EEPROM
+    }
+  }
+}
+
+// Change existing motor's Node ID
+void changeMotorNodeId(uint8_t currentId, uint8_t newId) {
+  if (svarv.setMotorNodeId(currentId, newId)) {
+    Serial.println("Node ID changed from " + String(currentId) + " to " + String(newId));
+    
+    // Update motor in system
+    svarv.removeMotor(currentId);
+    SvarvMotor& motor = svarv.addMotor(newId);
+    motor.saveConfig();
+  }
+}
+
+// Bulk configuration example
+void setupMultipleMotors() {
+  Serial.println("Configuring multiple motors...");
+  
+  // Configure 3 unconfigured motors with Node IDs 1, 2, 3
+  for (uint8_t nodeId = 1; nodeId <= 3; nodeId++) {
+    if (svarv.setMotorNodeId(0, nodeId)) {
+      Serial.println("Configured motor with Node ID " + String(nodeId));
+      delay(500); // Brief delay between configurations
+    }
+  }
+  
+  // Verify all motors
+  delay(2000);
+  auto discovered = svarv.scanForMotors(3000);
+  Serial.println("Found " + String(discovered.size()) + " configured motors");
+}
+```
+
+### Interactive Node ID Setup
+
+For a complete interactive Node ID configuration tool, see the [Node_ID_Setup_Example.ino](examples/Node_ID_Setup_Example/Node_ID_Setup_Example.ino) which provides:
+
+- **Motor Discovery**: Scan and identify all motors on the bus
+- **New Motor Setup**: Configure unconfigured motors (Node ID = 0)
+- **Bulk Configuration**: Auto-assign sequential Node IDs to multiple motors
+- **ID Changes**: Change existing motor Node IDs
+- **Factory Reset**: Reset motors to default configuration
+- **Communication Testing**: Verify motor connectivity and status
+
+```cpp
+// Example interactive menu from Node_ID_Setup_Example.ino
+void setupNodeIds() {
+  Serial.println("=== NODE ID CONFIGURATION MENU ===");
+  Serial.println("1. scan  - Scan for motors and show Node IDs");
+  Serial.println("2. set   - Set Node ID for unconfigured motor");
+  Serial.println("3. auto  - Auto-configure multiple motors");
+  Serial.println("4. change- Change existing motor's Node ID");
+  Serial.println("5. reset - Factory reset motor");
+  Serial.println("6. test  - Test communication with motor");
+}
+```
+
 ### Coordinated Multi-Motor Operations
 
 ```cpp
@@ -623,22 +500,6 @@ void loop() {
 }
 ```
 
-### Platform Detection and Information
-
-```cpp
-void setup() {
-  // Detect platform before initialization
-  SvarvPlatformType platform = svarvDetectPlatform();
-  Serial.println("Detected: " + svarvPlatformToString(platform));
-  
-  svarv.begin(1000000);
-  
-  // Get detailed platform info
-  Serial.println("CAN Interface: " + svarv.getPlatformInfo());
-  Serial.println("Library Version: " + SvarvMotionControl::getVersion());
-}
-```
-
 ## 🛠️ Hardware Setup
 
 ### ESP32 CAN Bus Wiring
@@ -657,7 +518,7 @@ GND      ----> GND
 Add 120Ω resistors between CANH and CANL at both ends of the bus
 ```
 
-### STM32 CAN Bus Wiring (New!)
+### STM32 CAN Bus Wiring
 
 ```
 STM32F4        CAN Transceiver          Motor Controller
@@ -673,7 +534,7 @@ GND      ----> GND
 Pin configuration varies by STM32 variant - check your board's documentation
 ```
 
-### Arduino + MCP2515 Wiring (New!)
+### Arduino + MCP2515 Wiring
 
 ```
 Arduino Uno    MCP2515 Module           Motor Controller
@@ -704,7 +565,7 @@ CS and INT pins are configurable in software
 Motor1 Motor2 Motor3 ... MotorN
 (ID=1) (ID=2) (ID=3)    (ID=N)
 
-Each motor needs unique node ID (1-255, or 1-8 on Arduino AVR)
+Each motor needs unique node ID (1-255)
 ```
 
 ## 🚨 Safety & Error Handling
@@ -750,56 +611,20 @@ motor.moveTo(currentTarget); // Refresh target
 
 ## 🐛 Troubleshooting
 
-### Platform-Specific Issues
+### Common Issues
 
-#### ESP32 Issues
+**Motor not responding:**
 ```cpp
 // Check connection
 if (!motor.isConnected()) {
   Serial.println("Motor not connected - check CAN bus");
 }
 
-// Verify platform detection
-Serial.println("Platform: " + svarv.getPlatformInfo());
-```
-
-#### STM32 Issues (New!)
-```cpp
-// Check if STM32 CAN is available
-if (!svarv.begin(1000000)) {
-  Serial.println("STM32 CAN initialization failed!");
-  Serial.println("Check if your STM32 variant has CAN peripheral");
-}
-```
-
-#### Arduino + MCP2515 Issues (New!)
-```cpp
-// Try different pin configurations
-int csPins[] = {10, 9, 8};
-int intPins[] = {2, 3};
-
-for (int cs : csPins) {
-  for (int intPin : intPins) {
-    if (svarv.begin(1000000, cs, intPin, MCP_8MHZ)) {
-      Serial.println("Success with CS=" + String(cs) + ", INT=" + String(intPin));
-      break;
-    }
-  }
-}
-```
-
-### Common Issues
-
-**Motor not responding:**
-```cpp
 // Check node ID
 Serial.println("Motor node ID: " + String(motor.getNodeId()));
 
 // Request status update
 motor.requestStatusUpdate();
-
-// Check platform compatibility
-Serial.println("Platform: " + svarv.getPlatformInfo());
 ```
 
 **CAN bus errors:**
@@ -828,6 +653,23 @@ if (error > 0.1) {
 }
 ```
 
+### Platform-Specific Troubleshooting
+
+**ESP32 Issues:**
+- Check if CAN pins are already used by other peripherals
+- Verify CAN transceiver power and connections
+- Check for electromagnetic interference
+
+**STM32 Issues:**
+- Ensure STM32duino core is installed
+- Check if your STM32 variant has CAN peripheral
+- Verify CAN pins aren't used by other functions
+
+**Arduino AVR Issues:**
+- Use memory-optimized examples, reduce debug output
+- Check SPI connections and CS pin configuration
+- Use lower CAN speeds (500k or 250k bps) for better performance
+
 ### Debug Output
 
 ```cpp
@@ -841,21 +683,6 @@ svarv.enableDebug(true);
 // [Svarv] Motor 1 connection: Disconnected -> Connected
 ```
 
-### Memory Optimization (Arduino AVR)
-
-```cpp
-// For Arduino Uno/Nano - memory-efficient operation
-void setup() {
-  Serial.begin(9600);        // Lower baud rate
-  svarv.enableDebug(false);  // Disable debug output
-  svarv.begin(500000);       // Lower CAN speed
-  
-  // Limit number of motors on AVR
-  motor1 = svarv.addMotor(1);
-  // Don't add too many motors on memory-constrained devices
-}
-```
-
 ## 📚 API Reference
 
 ### SvarvMotionControl Class
@@ -865,11 +692,12 @@ void setup() {
 | `begin(speed)` | Initialize with auto-platform detection |
 | `begin(speed, tx, rx)` | Initialize ESP32 with custom pins |
 | `begin(speed, can_instance)` | Initialize STM32 with CAN1/CAN2 |
-| `begin(speed, cs, int, crystal)` | Initialize MCP2515 with full config |
+| `begin(speed, cs, int, crystal)` | Initialize MCP2515 with configuration |
 | `addMotor(nodeId)` | Add motor to system |
 | `update()` | Process CAN messages (call frequently!) |
 | `scanForMotors(timeout)` | Discover motors on bus |
 | `emergencyStopAll()` | Stop all motors |
+| `setMotorNodeId(current, new)` | Configure motor Node IDs |
 | `getPlatformInfo()` | Get platform information |
 | `enableDebug(enable)` | Enable/disable debug output |
 
@@ -887,23 +715,20 @@ void setup() {
 | `getStatus()` | Get current status |
 | `saveConfig()` | Save to EEPROM |
 
-### Platform Utility Functions (New!)
+## 🎯 Platform Compatibility
 
-| Function | Description |
-|----------|-------------|
-| `svarvDetectPlatform()` | Detect current hardware platform |
-| `svarvPlatformToString(platform)` | Convert platform enum to string |
-| `SvarvMotionControl::getVersion()` | Get library version |
+| Platform | CAN Interface | Memory Usage | Max Motors | Performance |
+|----------|---------------|--------------|------------|-------------|
+| **ESP32** | Built-in CAN (TWAI) | ~8KB | 255 | Excellent |
+| **STM32** | Built-in CAN peripheral | ~6KB | 255 | Excellent |
+| **Arduino AVR** | MCP2515 (SPI) | ~3KB | 8* | Good |
+| **Generic** | MCP2515 (SPI) | ~4KB | 255 | Good |
+
+*Memory-optimized for Arduino Uno/Nano
 
 ## 🤝 Contributing
 
-We welcome contributions for all platforms! Please see our [Contributing Guidelines](CONTRIBUTING.md) for details.
-
-### Platform-Specific Contributions
-- **ESP32**: Advanced features, new ESP32 variants support
-- **STM32**: Additional STM32 family support, CAN3 support  
-- **AVR**: Memory optimizations, faster algorithms
-- **Generic**: New platform support, additional CAN controllers
+We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.md) for details.
 
 ### Development Setup
 1. Clone the repository
@@ -922,11 +747,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - **Discussions:** [GitHub Discussions](https://github.com/svarv-robotics/svarv-motion-control/discussions)
 - **Email:** support@svarv.com
 
-### Platform-Specific Support
-- **ESP32**: ESP32 Arduino Core documentation
-- **STM32**: STM32duino documentation  
-- **Arduino AVR**: MCP_CAN library documentation
-
 ## 🙏 Acknowledgments
 
 Inspired by excellent motor control libraries:
@@ -934,11 +754,6 @@ Inspired by excellent motor control libraries:
 - [ODrive](https://odriverobotics.com/) - High-performance motor controller
 - [VESC](https://vesc-project.com/) - Open-source motor controller
 - [MJBots](https://mjbots.com/) - Precision servo controllers
-
-Platform libraries that make cross-platform support possible:
-- **ESP32-TWAI-CAN** by Thomas Barth - ESP32 CAN support
-- **STM32duino** by STMicroelectronics - STM32 Arduino core
-- **MCP_CAN** by Cory J. Fowler - MCP2515 CAN controller support
 
 ## 🔗 Related Projects
 
@@ -948,4 +763,4 @@ Platform libraries that make cross-platform support possible:
 
 ---
 
-**Built with ❤️ by [Svarv Robotics](https://svarv.com) - Now supporting your favorite platform!**
+**Built with ❤️ by [Svarv Robotics](https://svarv.com)**
