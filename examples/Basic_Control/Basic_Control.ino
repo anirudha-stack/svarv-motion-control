@@ -29,7 +29,7 @@
 
 // Create motion control instance
 SvarvMotionControl svarv;
-SvarvMotor motor1;
+SvarvMotor* motor1 = nullptr;  // Use pointer instead of object
 
 // Control variables
 unsigned long lastMoveTime = 0;
@@ -54,11 +54,12 @@ void setup() {
   
   Serial.println("CAN bus initialized successfully!");
   
-  // Add motor with node ID 1
-  motor1 = svarv.addMotor(1);
+  // Add motor with node ID 1 and get reference
+  motor1 = &svarv.addMotor(1);  // Get pointer to the motor object
   
+  motor1->setLimits(25, 15, 3);
   // Set up callbacks for motor events
-  motor1.onStatusUpdate([](SvarvMotor& motor, const SvarvMotorStatus& status) {
+  motor1->onStatusUpdate([](SvarvMotor& motor, const SvarvMotorStatus& status) {
     Serial.print("Motor Status - Mode: ");
     Serial.print(svarvModeToString(status.control_mode));
     Serial.print(", Position: ");
@@ -69,14 +70,14 @@ void setup() {
     Serial.println(status.enabled ? "Yes" : "No");
   });
   
-  motor1.onError([](SvarvMotor& motor, SvarvErrorCode error, const String& message) {
+  motor1->onError([](SvarvMotor& motor, SvarvErrorCode error, const String& message) {
     Serial.print("ERROR on Motor ");
     Serial.print(motor.getNodeId());
     Serial.print(": ");
     Serial.println(message);
   });
   
-  motor1.onConnectionChange([](SvarvMotor& motor, SvarvConnectionState oldState, SvarvConnectionState newState) {
+  motor1->onConnectionChange([](SvarvMotor& motor, SvarvConnectionState oldState, SvarvConnectionState newState) {
     Serial.print("Motor ");
     Serial.print(motor.getNodeId());
     Serial.print(" connection: ");
@@ -90,12 +91,12 @@ void setup() {
   
   // Wait for motor to connect
   unsigned long connectStart = millis();
-  while (!motor1.isConnected() && millis() - connectStart < 10000) {
+  while (!motor1->isConnected() && millis() - connectStart < 10000) {
     svarv.update();
     delay(100);
   }
   
-  if (!motor1.isConnected()) {
+  if (!motor1->isConnected()) {
     Serial.println("ERROR: Motor not responding!");
     Serial.println("Check:");
     Serial.println("- Motor controller power");
@@ -122,7 +123,7 @@ void loop() {
   if (millis() - lastMoveTime > 5000) {
     lastMoveTime = millis();
     
-    if (!motor1.isConnected()) {
+    if (!motor1->isConnected()) {
       Serial.println("Motor disconnected - skipping movement");
       return;
     }
@@ -130,63 +131,63 @@ void loop() {
     switch (moveStep) {
       case 0:
         Serial.println("=== Position Control Demo ===");
-        motor1.setControlMode(SVARV_MODE_POSITION);
-        motor1.moveTo(0.0); // Move to 0 radians
+        motor1->setControlMode(SVARV_MODE_POSITION);
+        motor1->moveTo(0.0); // Move to 0 radians
         Serial.println("Moving to 0 radians...");
         break;
         
       case 1:
-        motor1.moveTo(3.14159); // Move to π radians (180 degrees)
+        motor1->moveTo(3.14159); // Move to π radians (180 degrees)
         Serial.println("Moving to π radians (180 degrees)...");
         break;
         
       case 2:
-        motor1.moveTo(-3.14159); // Move to -π radians (-180 degrees)
+        motor1->moveTo(-3.14159); // Move to -π radians (-180 degrees)
         Serial.println("Moving to -π radians (-180 degrees)...");
         break;
         
       case 3:
-        motor1.moveTo(0.0); // Return to 0
+        motor1->moveTo(0.0); // Return to 0
         Serial.println("Returning to 0 radians...");
         break;
         
       case 4:
         Serial.println("=== Velocity Control Demo ===");
-        motor1.setControlMode(SVARV_MODE_VELOCITY);
-        motor1.setVelocity(2.0); // 2 rad/s clockwise
+        motor1->setControlMode(SVARV_MODE_VELOCITY);
+        motor1->setVelocity(2.0); // 2 rad/s clockwise
         Serial.println("Spinning at 2 rad/s...");
         break;
         
       case 5:
-        motor1.setVelocity(-2.0); // 2 rad/s counter-clockwise
+        motor1->setVelocity(-2.0); // 2 rad/s counter-clockwise
         Serial.println("Spinning at -2 rad/s...");
         break;
         
       case 6:
-        motor1.setVelocity(0.0); // Stop
+        motor1->setVelocity(0.0); // Stop
         Serial.println("Stopping...");
         break;
         
       case 7:
         Serial.println("=== Torque Control Demo ===");
-        motor1.setControlMode(SVARV_MODE_TORQUE);
-        motor1.setTorque(0.1); // Small positive torque
+        motor1->setControlMode(SVARV_MODE_TORQUE);
+        motor1->setTorque(0.1); // Small positive torque
         Serial.println("Applying 0.1 Nm torque...");
         break;
         
       case 8:
-        motor1.setTorque(-0.1); // Small negative torque
+        motor1->setTorque(-0.1); // Small negative torque
         Serial.println("Applying -0.1 Nm torque...");
         break;
         
       case 9:
-        motor1.setTorque(0.0); // No torque
+        motor1->setTorque(0.0); // No torque
         Serial.println("Removing torque...");
         break;
         
       case 10:
         Serial.println("=== Demo Complete ===");
-        motor1.disable(); // Return to idle mode
+        motor1->disable(); // Return to idle mode
         Serial.println("Motor disabled. Demo will restart in 5 seconds.");
         Serial.println("");
         moveStep = -1; // Will be incremented to 0
@@ -201,8 +202,8 @@ void loop() {
   if (millis() - lastStatusTime > 2000) {
     lastStatusTime = millis();
     
-    if (motor1.isConnected()) {
-      const SvarvMotorStatus& status = motor1.getStatus();
+    if (motor1->isConnected()) {
+      const SvarvMotorStatus& status = motor1->getStatus();
       
       Serial.print("Status: Mode=");
       Serial.print(svarvModeToString(status.control_mode));
@@ -216,7 +217,7 @@ void loop() {
       
       if (status.error_code != SVARV_ERROR_NONE) {
         Serial.print(", ERROR: ");
-        Serial.print(motor1.getErrorString());
+        Serial.print(motor1->getErrorString());
       }
       
       Serial.println();
