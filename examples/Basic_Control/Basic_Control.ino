@@ -58,6 +58,9 @@ void setup() {
   motor1 = &svarv.addMotor(1);  // Get pointer to the motor object
   
   motor1->setLimits(25, 15, 3);
+  delay(100);  // Give it time to process
+  motor1->saveConfig();  // Save to EEPROM to persist the changes
+  
   // Set up callbacks for motor events
   motor1->onStatusUpdate([](SvarvMotor& motor, const SvarvMotorStatus& status) {
     Serial.print("Motor Status - Mode: ");
