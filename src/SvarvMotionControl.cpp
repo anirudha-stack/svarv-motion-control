@@ -43,6 +43,11 @@
 #define CMD_LOAD_CONFIG            0x31
 #define CMD_FACTORY_RESET          0x32
 
+// Add these after existing CMD_CONFIG constants (around line 45)
+#define CMD_CONFIG_POS_LIMIT_MIN   0x26    // Set minimum position limit [float32]
+#define CMD_CONFIG_POS_LIMIT_MAX   0x27    // Set maximum position limit [float32]
+#define CMD_CONFIG_ENABLE_LIMITS   0x28    // Enable/disable position limits [uint8]
+
 // Query commands
 #define CMD_QUERY_STATUS           0x40
 #define CMD_QUERY_CONFIG           0x41
@@ -361,6 +366,15 @@ bool SvarvMotor::moveTo(float position) {
             return false;
         }
     }
+    // Apply position limits if enabled
+    float constrained_position = constrainToLimits(position);
+    
+    // Optional: warn user if position was constrained
+    if (config_.position_limits_enabled && fabs(position - constrained_position) > 0.001f) {
+        // Position was constrained - could add debug output here
+        debugPrint("Position " + String(position, 3) + " constrained to " + 
+                  String(constrained_position, 3) + " rad");
+    }
     
     return sendCommand(CMD_SET_TARGET, reinterpret_cast<const uint8_t*>(&position), sizeof(float));
 }
@@ -481,6 +495,96 @@ bool SvarvMotor::setLimits(float velocity_limit, float current_limit, float volt
     }
     
     return success;
+}
+
+// Add these methods after the existing setLimits method (around line 350)
+
+bool SvarvMotor::setPositionLimits(float min_limit, float max_limit, bool enable) {
+    if (!isConnected()) {
+        return false;
+    }
+    
+    // Validate limits
+    if (min_limit >= max_limit) {
+        return false; // Invalid range
+    }
+    
+    bool success = true;
+    
+    // Send minimum limit
+    success &= sendConfig(CMD_CONFIG_POS_LIMIT_MIN, 
+                         reinterpret_cast<const uint8_t*>(&min_limit), sizeof(float));
+    delay(50);
+    
+    // Send maximum limit
+    success &= sendConfig(CMD_CONFIG_POS_LIMIT_MAX, 
+                         reinterpret_cast<const uint8_t*>(&max_limit), sizeof(float));
+    delay(50);
+    
+    // Enable/disable limits
+    uint8_t enable_flag = enable ? 1 : 0;
+    success &= sendConfig(CMD_CONFIG_ENABLE_LIMITS, &enable_flag, sizeof(uint8_t));
+    
+    if (success) {
+        // Update local configuration
+        config_.position_limit_min = min_limit;
+        config_.position_limit_max = max_limit;
+        config_.position_limits_enabled = enable;
+    }
+    
+    return success;
+}
+
+bool SvarvMotor::enablePositionLimits() {
+    if (!isConnected()) {
+        return false;
+    }
+    
+    uint8_t enable_flag = 1;
+    bool success = sendConfig(CMD_CONFIG_ENABLE_LIMITS, &enable_flag, sizeof(uint8_t));
+    
+    if (success) {
+        config_.position_limits_enabled = true;
+    }
+    
+    return success;
+}
+
+bool SvarvMotor::disablePositionLimits() {
+    if (!isConnected()) {
+        return false;
+    }
+    
+    uint8_t enable_flag = 0;
+    bool success = sendConfig(CMD_CONFIG_ENABLE_LIMITS, &enable_flag, sizeof(uint8_t));
+    
+    if (success) {
+        config_.position_limits_enabled = false;
+    }
+    
+    return success;
+}
+
+bool SvarvMotor::isPositionWithinLimits(float position) const {
+    if (!config_.position_limits_enabled) {
+        return true; // No limits enabled
+    }
+    
+    return (position >= config_.position_limit_min && position <= config_.position_limit_max);
+}
+
+float SvarvMotor::constrainToLimits(float position) const {
+    if (!config_.position_limits_enabled) {
+        return position; // No limits enabled
+    }
+    
+    if (position < config_.position_limit_min) {
+        return config_.position_limit_min;
+    } else if (position > config_.position_limit_max) {
+        return config_.position_limit_max;
+    }
+    
+    return position;
 }
 
 bool SvarvMotor::saveConfig() {
