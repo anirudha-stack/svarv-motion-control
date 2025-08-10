@@ -4,54 +4,59 @@
 [![Cross Platform](https://img.shields.io/badge/Platform-ESP32%20%7C%20STM32%20%7C%20AVR-green.svg)](https://github.com/svarv-robotics/svarv-motion-control)
 [![CAN Bus](https://img.shields.io/badge/Interface-CAN%20Bus-orange.svg)](https://en.wikipedia.org/wiki/CAN_bus)
 [![Version](https://img.shields.io/badge/Version-2.0.0-brightgreen.svg)](https://github.com/svarv-robotics/svarv-motion-control)
+[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-A comprehensive Arduino library for controlling CAN-based BLDC motor controllers. Inspired by industry-leading libraries like SimpleFOC, ODrive, and VESC, this library provides a simple yet powerful interface for advanced motor control applications with cross-platform compatibility.
+A comprehensive cross-platform Arduino library for controlling CAN-based BLDC motor controllers. Inspired by industry-leading libraries like SimpleFOC, ODrive, and VESC, this library provides a simple yet powerful interface for advanced motor control applications across multiple hardware platforms.
 
-## 🚀 Features
-
-### **Multi-Motor Control**
-- Control up to 255 motors on a single CAN bus
-- Automatic motor discovery and configuration
-- Synchronized coordinated movements
-- Individual motor status monitoring
-
-### **Advanced Control Modes**
-- **Position Control** - Precise angular positioning with configurable PID
-- **Velocity Control** - Speed regulation with smooth acceleration profiles  
-- **Torque Control** - Direct torque/current control for force applications
-- **Calibration Mode** - Automatic sensor and motor parameter calibration
-
-### **Real-Time Monitoring**
-- Live telemetry data (position, velocity, current, voltage)
-- Connection state monitoring with automatic reconnection
-- Comprehensive error handling and reporting
-- CAN bus health monitoring and statistics
-
-### **Advanced Features**
-- **Interactive PID Tuning** - Real-time parameter adjustment with performance analysis
-- **Non-blocking Operations** - Asynchronous communication with callback support
-- **Configuration Management** - Save/load parameters to motor EEPROM
-- **Safety Systems** - Emergency stops, timeout protection, limit enforcement
+## 🚀 Key Features
 
 ### **Cross-Platform Compatibility** *(New in v2.0)*
-- **ESP32**: Built-in CAN via ESP32-TWAI-CAN library
-- **STM32**: Built-in CAN via STM32duino library
-- **Arduino AVR**: MCP2515 external CAN controller support
-- **Generic Platforms**: Universal MCP2515 support
+- **ESP32**: Built-in CAN via ESP32-TWAI-CAN library (ESP32-C3, ESP32-S3, ESP32 Classic)
+- **STM32**: Built-in CAN via STM32duino library (F1, F4, F7, H7 series)
+- **Arduino AVR**: MCP2515 external CAN controller support (Uno, Mega, Nano)
+- **Generic Platforms**: Universal MCP2515 support for other Arduino-compatible boards
 - **Automatic Platform Detection** with intelligent configuration
 
-## 📋 Requirements
+### **Advanced Motor Control**
+- **Multi-Motor Control**: Up to 255 motors on single CAN bus (8 on AVR due to memory)
+- **Control Modes**: Position, velocity, torque, and calibration modes
+- **Real-Time Monitoring**: Live telemetry, status updates, and performance metrics
+- **Interactive PID Tuning**: Real-time parameter adjustment with step response analysis
+- **Physical Position Limits**: Configurable min/max position constraints with automatic enforcement
+- **Node ID Management**: Interactive configuration tool for setting up motor IDs
 
-### Hardware
-- **ESP32** with built-in CAN (ESP32-C3, ESP32-S3, ESP32 Classic) *OR*
-- **STM32** with built-in CAN (F1, F4, F7, H7 series) *OR*
-- **Arduino AVR** (Uno, Mega, Nano) with MCP2515 CAN controller *OR*
-- **Generic Arduino-compatible** board with MCP2515 shield
-- **CAN Transceiver** (SN65HVD230, TJA1050, or similar)
-- **Svarv BLDC Motor Controller(s)** with firmware v1.2 or later
-- **120Ω termination resistors** at both ends of CAN bus
+### **Professional Features**
+- **Non-blocking Operations**: Asynchronous communication with callback support
+- **Comprehensive Error Handling**: Detailed error codes, automatic recovery, and safety systems
+- **Configuration Management**: Save/load parameters to motor EEPROM with factory reset
+- **Advanced Motion Patterns**: Trajectory generation, velocity profiling, force control, impedance control
+- **System Diagnostics**: CAN bus health monitoring, performance analysis, and debugging tools
 
-### Software
+### **Developer-Friendly**
+- **Platform Abstraction**: Write once, run on any supported platform
+- **Memory Optimization**: Efficient data structures for resource-constrained devices
+- **Rich Examples**: 8 comprehensive examples covering all features
+- **Extensive Documentation**: Detailed API reference and troubleshooting guides
+
+## 📋 Hardware Requirements
+
+### Microcontroller Platforms
+| Platform | CAN Interface | Memory Usage | Max Motors | Performance |
+|----------|---------------|--------------|------------|-------------|
+| **ESP32** | Built-in CAN (TWAI) | ~8KB | 255 | Excellent |
+| **STM32** | Built-in CAN peripheral | ~6KB | 255 | Excellent |
+| **Arduino AVR** | MCP2515 (SPI) | ~3KB | 8* | Good |
+| **Generic** | MCP2515 (SPI) | ~4KB | 255 | Good |
+
+*Memory-optimized for Arduino Uno/Nano
+
+### Additional Hardware
+- **CAN Transceiver**: SN65HVD230, TJA1050, or similar
+- **Svarv BLDC Motor Controller(s)**: With firmware v1.2 or later
+- **120Ω Termination Resistors**: At both ends of CAN bus
+- **Power Supply**: Appropriate for your motor controllers
+
+### Software Dependencies
 - **Arduino IDE** 1.8.0+ or **PlatformIO**
 - Platform-specific libraries (automatically installed):
   - ESP32: ESP32-TWAI-CAN library
@@ -86,22 +91,29 @@ lib_deps =
 #include "SvarvMotionControl.h"
 
 SvarvMotionControl svarv;
-SvarvMotor motor1;
+SvarvMotor* motor1 = nullptr;
 
 void setup() {
   Serial.begin(115200);
   
-  // Initialize CAN bus at 1 Mbps (auto-detects platform)
+  // Initialize CAN bus (auto-detects platform)
   if (!svarv.begin(1000000)) {
     Serial.println("CAN initialization failed!");
     while(1);
   }
   
   // Add motor with node ID 1
-  motor1 = svarv.addMotor(1);
+  motor1 = &svarv.addMotor(1);
   
-  // Set position control mode
-  motor1.setControlMode(SVARV_MODE_POSITION);
+  // Wait for connection
+  while (!motor1->isConnected()) {
+    svarv.update();
+    delay(100);
+  }
+  
+  // Configure for position control
+  motor1->setControlMode(SVARV_MODE_POSITION);
+  motor1->setLimits(25.0, 5.0, 12.0); // vel, current, voltage limits
 }
 
 void loop() {
@@ -109,10 +121,10 @@ void loop() {
   svarv.update();
   
   // Move to different positions
-  motor1.moveTo(3.14159); // Move to π radians
+  motor1->moveTo(3.14159); // Move to π radians
   delay(3000);
   
-  motor1.moveTo(0.0);     // Return to home
+  motor1->moveTo(0.0);     // Return to home
   delay(3000);
 }
 ```
@@ -123,112 +135,166 @@ void loop() {
 #include "SvarvMotionControl.h"
 
 SvarvMotionControl svarv;
-SvarvMotor motor1, motor2, motor3;
+SvarvMotor* motor1 = nullptr;
+SvarvMotor* motor2 = nullptr;
 
 void setup() {
   Serial.begin(115200);
   svarv.begin(1000000);
   
-  // Auto-discover motors
+  // Scan for available motors
   auto discovered = svarv.scanForMotors(5000);
+  Serial.println("Found " + String(discovered.size()) + " motors");
   
   // Add discovered motors
-  for (uint8_t nodeId : discovered) {
-    Serial.println("Found motor: " + String(nodeId));
-  }
+  motor1 = &svarv.addMotor(discovered[0]);
+  motor2 = &svarv.addMotor(discovered[1]);
   
-  motor1 = svarv.addMotor(1);
-  motor2 = svarv.addMotor(2);
-  motor3 = svarv.addMotor(3);
-  
-  // Configure all for position control
-  motor1.setControlMode(SVARV_MODE_POSITION);
-  motor2.setControlMode(SVARV_MODE_POSITION);
-  motor3.setControlMode(SVARV_MODE_POSITION);
+  // Configure both for position control
+  motor1->setControlMode(SVARV_MODE_POSITION);
+  motor2->setControlMode(SVARV_MODE_POSITION);
 }
 
 void loop() {
   svarv.update();
   
-  // Synchronized movement
-  motor1.moveTo(1.0);
-  motor2.moveTo(2.0);
-  motor3.moveTo(3.0);
+  // Synchronized movement - opposite directions
+  motor1->moveTo(2.0);
+  motor2->moveTo(-2.0);
+  delay(3000);
   
-  delay(5000);
-  
-  // Return all to home
-  motor1.moveTo(0.0);
-  motor2.moveTo(0.0);
-  motor3.moveTo(0.0);
-  
-  delay(5000);
+  // Return both to home
+  motor1->moveTo(0.0);
+  motor2->moveTo(0.0);
+  delay(3000);
 }
 ```
 
 ## 🎯 Platform-Specific Setup
 
-The library automatically detects your platform, but you can also specify platform-specific settings:
+The library automatically detects your platform, but you can specify platform-specific settings:
 
-### ESP32 with Custom Pins
+### ESP32 Built-in CAN
 ```cpp
-// ESP32 with custom CAN pins
+// Auto-detection (default pins: TX=21, RX=20)
+svarv.begin(1000000);
+
+// Custom pins
 svarv.begin(1000000, 4, 5); // TX=GPIO4, RX=GPIO5
 ```
 
-### STM32 with CAN2
+### STM32 Built-in CAN
 ```cpp
-// STM32 using CAN2 instead of CAN1
-svarv.begin(1000000, 2);
+// Auto-detection (uses CAN1)
+svarv.begin(1000000);
+
+// Specify CAN instance
+svarv.begin(1000000, 2); // Use CAN2
 ```
 
 ### Arduino + MCP2515
 ```cpp
-// Arduino with MCP2515: speed, CS pin, INT pin, crystal freq
-svarv.begin(1000000, 10, 2, MCP_8MHZ);
+// Basic setup (CS=10, INT=2, 8MHz crystal)
+svarv.begin(1000000, 10);
+
+// Full configuration
+svarv.begin(1000000, 10, 2, MCP_8MHZ); // CS, INT, crystal
 ```
 
-## 📖 Detailed Examples
+## 🛠️ Hardware Wiring
 
-The library includes comprehensive examples demonstrating various features:
+### ESP32 CAN Bus Wiring
 
-### [Basic_Control.ino](examples/Basic_Control/Basic_Control.ino)
-- Single motor control
-- Different control modes (position, velocity, torque)
-- Real-time status monitoring
-- Error handling
+```
+ESP32          CAN Transceiver          Motor Controller
+-----          ---------------          ----------------
+GPIO 21  ----> CTX (TX)
+GPIO 20  ----> CRX (RX)
+3.3V     ----> VCC
+GND      ----> GND
+                    CANH  ============== CANH
+                    CANL  ============== CANL
+                    GND   ============== GND
 
-### [Multi_Motor_Control.ino](examples/Multi_Motor_Control/Multi_Motor_Control.ino)
-- Multiple motor coordination
-- Synchronized movements
-- System health monitoring
-- Advanced movement patterns
+Add 120Ω resistors between CANH and CANL at both ends of the bus
+```
 
-### [PID_Tuning.ino](examples/PID_Tuning/PID_Tuning.ino)
-- Interactive PID parameter tuning
-- Step response testing
-- Performance analysis
-- Automated tuning suggestions
+### STM32 CAN Bus Wiring
 
-### [Advanced_Control_Patterns.ino](examples/Advanced_Control_Patterns/Advanced_Control_Patterns.ino)
-- Trajectory generation and following
-- Velocity profiling with acceleration limits
-- Force control applications
-- Impedance control for compliant motion
+```
+STM32F4        CAN Transceiver          Motor Controller
+-------        ---------------          ----------------
+PB9      ----> CTX (TX)                 (pins vary by variant)
+PB8      ----> CRX (RX)
+3.3V     ----> VCC
+GND      ----> GND
+                    CANH  ============== CANH
+                    CANL  ============== CANL
+                    GND   ============== GND
+```
 
-### [Cross_Platform_Example.ino](examples/Cross_Platform_Example/Cross_Platform_Example.ino)
-- Platform auto-detection demonstration
-- Platform-specific configuration examples
-- Troubleshooting and diagnostics
-- Cross-platform compatibility testing
+### Arduino + MCP2515 Wiring
 
-### [Node_ID_Setup_Example.ino](examples/Node_ID_Setup_Example/Node_ID_Setup_Example.ino)
-- Interactive Node ID configuration tool
-- Setting up new/unconfigured motors (Node ID = 0)
-- Auto-configuring multiple motors with sequential IDs
-- Changing existing motor Node IDs
-- Factory reset and reconfiguration
-- Motor discovery and verification
+```
+Arduino Uno    MCP2515 Module           Motor Controller
+-----------    --------------           ----------------
+Pin 13   ----> SCK
+Pin 11   ----> MOSI (SI)
+Pin 12   ----> MISO (SO)
+Pin 10   ----> CS
+Pin 2    ----> INT
+5V       ----> VCC
+GND      ----> GND
+                    CANH  ============== CANH
+                    CANL  ============== CANL
+                    GND   ============== GND
+```
+
+## 📖 Comprehensive Examples
+
+The library includes 8 detailed examples demonstrating various features:
+
+### 1. [Basic_Control.ino](examples/Basic_Control/Basic_Control.ino)
+**Purpose**: Introduction to single motor control  
+**Features**: Position, velocity, and torque modes with real-time monitoring  
+**Best for**: Getting started, understanding basic concepts
+
+### 2. [Multi_Motor_Control.ino](examples/Multi_Motor_Control/Multi_Motor_Control.ino)
+**Purpose**: Coordinated control of multiple motors  
+**Features**: Two-motor synchronization with opposite commands  
+**Best for**: Multi-axis systems, coordinated movements
+
+### 3. [Cross_Platform_Example.ino](examples/Cross_Platform_Example/Cross_Platform_Example.ino)
+**Purpose**: Platform compatibility and auto-detection demonstration  
+**Features**: Auto-detection, platform-specific configuration, troubleshooting  
+**Best for**: Testing platform compatibility, debugging setup issues
+
+### 4. [PID_Tuning.ino](examples/PID_Tuning/PID_Tuning.ino)
+**Purpose**: Interactive PID parameter tuning tool  
+**Features**: Real-time gain adjustment, step response analysis, performance metrics  
+**Best for**: Optimizing control performance, system tuning  
+**Commands**: `p20` (P gain), `i0.1` (I gain), `step` (test), `save` (store settings)
+
+### 5. [Advanced_Control_Patterns.ino](examples/Advanced_Control_Patterns/Advanced_Control_Patterns.ino)
+**Purpose**: Sophisticated motion control techniques  
+**Features**: Trajectory generation, velocity profiling, force control, impedance control  
+**Best for**: Robotics applications, advanced motion patterns
+
+### 6. [Node_ID_Setup_Example.ino](examples/Node_ID_Setup_Example/Node_ID_Setup_Example.ino)
+**Purpose**: Interactive motor Node ID configuration  
+**Features**: Configure unconfigured motors, change existing IDs, bulk setup  
+**Best for**: Initial motor setup, system configuration  
+**Commands**: `init`, `scan`, `set 2`, `save 2`, `verify`
+
+### 7. [Current_Sense_Test.ino](examples/Current_Sense_Test/Current_Sense_Test.ino)
+**Purpose**: Current sensor testing and monitoring  
+**Features**: Real-time current display, manual motor loading test  
+**Best for**: Hardware validation, current sensor calibration
+
+### 8. [Physical_Limits_Example.ino](examples/Physical_Limits_Example/Physical_Limits_Example.ino)
+**Purpose**: Position limits and safety constraints  
+**Features**: Set min/max limits, automatic position clamping, enable/disable limits  
+**Best for**: Safety-critical applications, preventing mechanical damage
 
 ## 🎛️ Control Modes
 
@@ -278,34 +344,79 @@ motor.setTorque(0.0);   // No torque
 motor.setPID(SVARV_PID_POSITION, 20.0, 0.1, 0.05);
 //           P gain ^^^^  ^^^I  ^^^D
 
-// Set individual gains
-motor.setPID(SVARV_PID_POSITION, 25.0, 0.0, 0.0); // P-only control
-
 // Different controllers
 motor.setPID(SVARV_PID_VELOCITY, 0.5, 10.0, 0.0); // Velocity PID
 motor.setPID(SVARV_PID_CURRENT, 3.0, 300.0, 0.0); // Current PID
 ```
 
-### Motor Limits
+### Physical Position Limits
+
+```cpp
+// Set position limits: -2π to +2π radians
+motor.setPositionLimits(-2*PI, 2*PI, true); // min, max, enable
+
+// Commands beyond limits are automatically constrained
+motor.moveTo(10.0); // Automatically limited to 2π
+
+// Enable/disable limits
+motor.enablePositionLimits();
+motor.disablePositionLimits();
+
+// Check if position is within limits
+if (motor.isPositionWithinLimits(target_pos)) {
+  motor.moveTo(target_pos);
+}
+```
+
+### Motor Limits and Safety
 
 ```cpp
 // Set safety limits
 motor.setLimits(15.0,  // Max velocity [rad/s]
                 5.0,   // Max current [A]
                 12.0); // Max voltage [V]
-```
 
-### Configuration Persistence
-
-```cpp
-// Save current settings to motor's EEPROM
+// Save configuration to EEPROM
 motor.saveConfig();
 
-// Load settings from EEPROM
-motor.loadConfig();
+// Emergency stop
+motor.emergencyStop();
+svarv.emergencyStopAll(); // Stop all motors
+```
 
-// Reset to factory defaults
-motor.factoryReset();
+## 🔧 Node ID Configuration
+
+### Setting Up New Motors
+
+Use the interactive Node ID configuration tool:
+
+```cpp
+// 1. Connect ONLY ONE unconfigured motor to CAN bus
+// 2. Use Node_ID_Setup_Example.ino
+// 3. Follow the interactive commands:
+
+// Initialize CAN
+// Command: init
+
+// Scan for existing motors
+// Command: scan
+
+// Configure unconfigured motor to ID 2
+// Command: set 2
+
+// Save configuration to EEPROM
+// Command: save 2
+
+// Verify motor responds
+// Command: verify
+```
+
+### Bulk Configuration
+
+```cpp
+// Configure multiple motors with sequential IDs
+int configured = svarv.configureMotorRange(1, 5); // IDs 1-5
+Serial.println("Configured " + String(configured) + " motors");
 ```
 
 ## 📊 Monitoring & Callbacks
@@ -315,9 +426,9 @@ motor.factoryReset();
 ```cpp
 // Get current status
 const SvarvMotorStatus& status = motor.getStatus();
-Serial.println("Position: " + String(status.position));
-Serial.println("Velocity: " + String(status.velocity));
-Serial.println("Current: " + String(status.current_q));
+Serial.println("Position: " + String(status.position, 3) + " rad");
+Serial.println("Velocity: " + String(status.velocity, 2) + " rad/s");
+Serial.println("Current: " + String(status.current_q, 2) + " A");
 
 // Quick status checks
 bool connected = motor.isConnected();
@@ -363,242 +474,28 @@ if (!svarv.isCANHealthy()) {
 uint32_t sent, received, errors;
 svarv.getCANStatistics(sent, received, errors);
 Serial.println("CAN Stats - Sent: " + String(sent) + ", Errors: " + String(errors));
-
-// Platform information (if available)
-Serial.println("Library Version: " + SvarvMotionControl::getVersion());
-```
-
-## 🔧 Advanced Features
-
-### Motor Discovery & Auto-Configuration
-
-```cpp
-// Scan for motors on the CAN bus
-auto discovered = svarv.scanForMotors(5000); // 5 second timeout
-
-Serial.println("Found " + String(discovered.size()) + " motors:");
-for (uint8_t nodeId : discovered) {
-  Serial.println("  - Motor " + String(nodeId));
-}
-
-// Auto-configure unconfigured motors (node ID = 0)
-int configured = svarv.autoConfigureMotors(1, 10); // Start from ID 1, max 10 motors
-Serial.println("Configured " + String(configured) + " motors");
-```
-
-### Node ID Configuration
-
-Setting up Node IDs for new or unconfigured motors:
-
-```cpp
-// Configure unconfigured motors automatically
-void setupNewMotors() {
-  Serial.println("Configuring unconfigured motors...");
-  
-  // Auto-configure starting from Node ID 1, max 5 motors
-  int configured = svarv.autoConfigureMotors(1, 5);
-  if (configured > 0) {
-    Serial.println("✅ Configured " + String(configured) + " motors!");
-    
-    // Verify the new motors respond
-    delay(2000);
-    auto discovered = svarv.scanForMotors(3000);
-    for (uint8_t nodeId : discovered) {
-      SvarvMotor& motor = svarv.addMotor(nodeId);
-      if (motor.isConnected()) {
-        motor.saveConfig(); // Save to EEPROM
-      }
-    }
-  }
-}
-
-// For changing existing motor Node IDs, use the interactive tool
-// See Node_ID_Setup_Example.ino for step-by-step configuration
-
-// Bulk configuration example
-void setupMultipleMotors() {
-  Serial.println("Scanning for unconfigured motors...");
-  
-  // Configure multiple unconfigured motors with sequential IDs
-  int configured = svarv.autoConfigureMotors(1, 10); // Start from ID 1, max 10
-  
-  if (configured > 0) {
-    Serial.println("Configured " + String(configured) + " motors with IDs 1-" + String(configured));
-    
-    // Verify all motors
-    delay(2000);
-    auto discovered = svarv.scanForMotors(3000);
-    Serial.println("Found " + String(discovered.size()) + " configured motors");
-  }
-}
-```
-
-### Interactive Node ID Setup
-
-For a complete interactive Node ID configuration tool, see the [Node_ID_Setup_Example.ino](examples/Node_ID_Setup_Example/Node_ID_Setup_Example.ino) which provides:
-
-- **Motor Discovery**: Scan and identify all motors on the bus
-- **New Motor Setup**: Configure unconfigured motors (Node ID = 0)
-- **Bulk Configuration**: Auto-assign sequential Node IDs to multiple motors
-- **ID Changes**: Change existing motor Node IDs
-- **Factory Reset**: Reset motors to default configuration
-- **Communication Testing**: Verify motor connectivity and status
-
-```cpp
-// Example interactive menu from Node_ID_Setup_Example.ino
-void setupNodeIds() {
-  Serial.println("=== NODE ID CONFIGURATION MENU ===");
-  Serial.println("1. scan  - Scan for motors and show Node IDs");
-  Serial.println("2. set   - Set Node ID for unconfigured motor");
-  Serial.println("3. auto  - Auto-configure multiple motors");
-  Serial.println("4. change- Change existing motor's Node ID");
-  Serial.println("5. reset - Factory reset motor");
-  Serial.println("6. test  - Test communication with motor");
-}
-```
-
-### Coordinated Multi-Motor Operations
-
-```cpp
-// Get all motors
-auto allMotors = svarv.getAllMotors();
-
-// Emergency stop all
-int stopped = svarv.emergencyStopAll();
-
-// Enable/disable all
-int enabled = svarv.enableAll();
-int disabled = svarv.disableAll();
-
-// Synchronized movements
-for (auto* motor : allMotors) {
-  motor->moveTo(calculateTargetPosition(motor->getNodeId()));
-}
-```
-
-### Performance Optimization
-
-```cpp
-void loop() {
-  // CRITICAL: Call update() frequently for optimal performance
-  svarv.update(); // Aim for 10ms or faster
-  
-  // Your application code here
-  // ...
-  
-  // Avoid blocking delays - use non-blocking timing instead
-  static unsigned long lastAction = 0;
-  if (millis() - lastAction > 1000) {
-    lastAction = millis();
-    // Periodic actions
-  }
-}
-```
-
-## 🛠️ Hardware Setup
-
-### ESP32 CAN Bus Wiring
-
-```
-ESP32          CAN Transceiver          Motor Controller
------          ---------------          ----------------
-GPIO 21  ----> CTX (TX)
-GPIO 20  ----> CRX (RX)
-3.3V     ----> VCC
-GND      ----> GND
-                    CANH  ============== CANH
-                    CANL  ============== CANL
-                    GND   ============== GND
-
-Add 120Ω resistors between CANH and CANL at both ends of the bus
-```
-
-### STM32 CAN Bus Wiring
-
-```
-STM32F4        CAN Transceiver          Motor Controller
--------        ---------------          ----------------
-PB9      ----> CTX (TX)
-PB8      ----> CRX (RX)
-3.3V     ----> VCC
-GND      ----> GND
-                    CANH  ============== CANH
-                    CANL  ============== CANL
-                    GND   ============== GND
-
-Pin configuration varies by STM32 variant - check your board's documentation
-```
-
-### Arduino + MCP2515 Wiring
-
-```
-Arduino Uno    MCP2515 Module           Motor Controller
------------    --------------           ----------------
-Pin 13   ----> SCK
-Pin 11   ----> MOSI (SI)
-Pin 12   ----> MISO (SO)
-Pin 10   ----> CS
-Pin 2    ----> INT
-5V       ----> VCC
-GND      ----> GND
-                    CANH  ============== CANH
-                    CANL  ============== CANL
-                    GND   ============== GND
-
-CS and INT pins are configurable in software
-```
-
-### Multi-Motor Setup
-
-```
-     Platform (ESP32/STM32/Arduino)
-               |
-          CAN Interface
-               |
-  -----+-----+-----+-----
-  |    |     |     |    |
-Motor1 Motor2 Motor3 ... MotorN
-(ID=1) (ID=2) (ID=3)    (ID=N)
-
-Each motor needs unique node ID (1-255)
 ```
 
 ## 🚨 Safety & Error Handling
 
-### Emergency Stops
+### Error Codes and Recovery
 
-```cpp
-// Individual motor emergency stop
-motor.emergencyStop();
-
-// System-wide emergency stop
-svarv.emergencyStopAll();
-
-// Error-triggered emergency stop
-motor.onError([](SvarvMotor& m, SvarvErrorCode error, const String& message) {
-  if (error == SVARV_ERROR_OVER_CURRENT) {
-    m.emergencyStop();
-  }
-});
-```
-
-### Error Codes
-
-| Error Code | Description | Typical Cause | Action |
-|------------|-------------|---------------|---------|
+| Error Code | Description | Typical Cause | Recommended Action |
+|------------|-------------|---------------|-------------------|
 | `SVARV_ERROR_NONE` | No error | Normal operation | Continue |
 | `SVARV_ERROR_COMMAND_TIMEOUT` | No commands received | Communication loss | Check connections |
 | `SVARV_ERROR_OVER_CURRENT` | Current limit exceeded | Mechanical binding | Emergency stop |
 | `SVARV_ERROR_OVER_VOLTAGE` | Voltage limit exceeded | Power supply issue | Check power |
+| `SVARV_ERROR_POSITION_LIMIT` | Position limit hit | Motion beyond limits | Adjust target |
 | `SVARV_ERROR_ENCODER_FAILURE` | Encoder not responding | Sensor malfunction | Replace encoder |
 
 ### Timeout Protection
 
 ```cpp
-// Motors automatically enter safe mode if no commands received
-// Position mode: 60 second timeout
-// Velocity mode: 5 second timeout  
-// Torque mode: 1 second timeout
+// Motors automatically enter safe mode if no commands received:
+// - Position mode: 60 second timeout
+// - Velocity mode: 5 second timeout  
+// - Torque mode: 1 second timeout
 
 // Send periodic commands to keep motor active
 motor.moveTo(currentTarget); // Refresh target
@@ -615,63 +512,27 @@ if (!motor.isConnected()) {
   Serial.println("Motor not connected - check CAN bus");
 }
 
-// Check node ID
-Serial.println("Motor node ID: " + String(motor.getNodeId()));
+// Verify CAN health
+if (!svarv.isCANHealthy()) {
+  Serial.println("CAN bus issues detected");
+}
 
 // Request status update
 motor.requestStatusUpdate();
 ```
 
-**CAN bus errors:**
-```cpp
-// Check CAN health
-if (!svarv.isCANHealthy()) {
-  uint32_t sent, received, errors;
-  svarv.getCANStatistics(sent, received, errors);
-  
-  float errorRate = (float)errors / (sent + received);
-  if (errorRate > 0.05) {
-    Serial.println("High CAN error rate: " + String(errorRate * 100) + "%");
-  }
-}
-```
-
-**Poor position control:**
-```cpp
-// Check PID tuning
-const auto& status = motor.getStatus();
-float error = fabs(status.target_value - status.position);
-
-if (error > 0.1) {
-  Serial.println("Large position error - check PID gains");
-  // Use PID_Tuning.ino example for systematic tuning
-}
-```
-
-### Platform-Specific Troubleshooting
-
-**ESP32 Issues:**
-- Check if CAN pins are already used by other peripherals
-- Verify CAN transceiver power and connections
-- Check for electromagnetic interference
-
-**STM32 Issues:**
-- Ensure STM32duino core is installed
-- Check if your STM32 variant has CAN peripheral
-- Verify CAN pins aren't used by other functions
-
-**Arduino AVR Issues:**
-- Use memory-optimized examples, reduce debug output
-- Check SPI connections and CS pin configuration
-- Use lower CAN speeds (500k or 250k bps) for better performance
+**Platform-specific issues:**
+- **ESP32**: Check if CAN pins conflict with other peripherals
+- **STM32**: Ensure STM32duino core is installed and CAN peripheral exists
+- **Arduino AVR**: Use lower CAN speeds (500k/250k), check memory usage
 
 ### Debug Output
 
 ```cpp
-// Enable debug output
+// Enable debug output for detailed diagnostics
 svarv.enableDebug(true);
 
-// This will print detailed CAN communication info:
+// This prints detailed information:
 // [Svarv] CAN bus initialized @ 1000000 bps
 // [Svarv] Platform: ESP32 Built-in CAN
 // [Svarv] Added motor with node ID: 1
@@ -689,37 +550,31 @@ svarv.enableDebug(true);
 | `begin(speed, can_instance)` | Initialize STM32 with CAN1/CAN2 |
 | `begin(speed, cs, int, crystal)` | Initialize MCP2515 with configuration |
 | `addMotor(nodeId)` | Add motor to system |
-| `update()` | Process CAN messages (call frequently!) |
+| `removeMotor(nodeId)` | Remove motor from system |
 | `scanForMotors(timeout)` | Discover motors on bus |
+| `configureSingleMotor(targetId)` | Configure unconfigured motor to specific ID |
+| `update()` | Process CAN messages (call frequently!) |
 | `emergencyStopAll()` | Stop all motors |
-| `setMotorNodeId(current, new)` | Configure motor Node IDs (via autoConfigureMotors) |
-| `getPlatformInfo()` | Get platform information (if available) |
+| `getPlatformInfo()` | Get platform information |
 | `enableDebug(enable)` | Enable/disable debug output |
 
 ### SvarvMotor Class
 
 | Method | Description |
 |--------|-------------|
-| `setControlMode(mode)` | Set control mode |
-| `moveTo(position)` | Move to absolute position |
-| `setVelocity(velocity)` | Set velocity target |
-| `setTorque(torque)` | Set torque target |
+| `setControlMode(mode)` | Set control mode (IDLE, POSITION, VELOCITY, TORQUE) |
+| `moveTo(position)` | Move to absolute position [rad] |
+| `moveBy(delta)` | Move relative to current position [rad] |
+| `setVelocity(velocity)` | Set velocity target [rad/s] |
+| `setTorque(torque)` | Set torque target [Nm] |
 | `setPID(type, p, i, d)` | Configure PID controller |
 | `setLimits(vel, cur, volt)` | Set safety limits |
+| `setPositionLimits(min, max, enable)` | Set physical position limits |
 | `isConnected()` | Check connection status |
 | `getStatus()` | Get current status |
-| `saveConfig()` | Save to EEPROM |
-
-## 🎯 Platform Compatibility
-
-| Platform | CAN Interface | Memory Usage | Max Motors | Performance |
-|----------|---------------|--------------|------------|-------------|
-| **ESP32** | Built-in CAN (TWAI) | ~8KB | 255 | Excellent |
-| **STM32** | Built-in CAN peripheral | ~6KB | 255 | Excellent |
-| **Arduino AVR** | MCP2515 (SPI) | ~3KB | 8* | Good |
-| **Generic** | MCP2515 (SPI) | ~4KB | 255 | Good |
-
-*Memory-optimized for Arduino Uno/Nano
+| `saveConfig()` | Save configuration to EEPROM |
+| `isAtTarget(tolerance)` | Check if at target position |
+| `waitForTarget(timeout, tolerance)` | Wait for target (blocking) |
 
 ## 🤝 Contributing
 
@@ -728,7 +583,7 @@ We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.
 ### Development Setup
 1. Clone the repository
 2. Install dependencies for your target platform
-3. Run examples with hardware
+3. Test with real hardware
 4. Submit pull requests
 
 ## 📄 License
@@ -754,8 +609,7 @@ Inspired by excellent motor control libraries:
 
 - [Svarv Motor Controller Firmware](https://github.com/svarv-robotics/svarv-motor-controller) - BLDC motor controller firmware
 - [Svarv Hardware Designs](https://github.com/svarv-robotics/svarv-hardware) - Open-source motor controller hardware
-- [CAN Bus Examples](https://github.com/svarv-robotics/can-examples) - Additional CAN communication examples
 
 ---
 
-**Built with ❤️ by [Svarv Robotics](https://svarv.com)**
+**Built with ❤️ by [Svarv Robotics]**
