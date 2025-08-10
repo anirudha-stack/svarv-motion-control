@@ -80,7 +80,7 @@
 #include <functional>
 #include <vector>
 
- // Platform detection and CAN library includes
+// Platform detection and CAN library includes
 #if defined(ESP32)
 #include <ESP32-TWAI-CAN.hpp>
 #define SVARV_PLATFORM_ESP32
@@ -88,43 +88,56 @@
 #include <STM32_CAN.h>
 #define SVARV_PLATFORM_STM32
 #elif defined(ARDUINO_ARCH_AVR) || defined(__AVR__)
-  #include <mcp_can.h>
-  #include <mcp_can_dfs.h>   // <<— add this so MCP_8MHZ, MCP_16MHZ, etc. are defined
-  #include <SPI.h>
+#include <mcp_can.h>
+#include <mcp_can_dfs.h> // <<— add this so MCP_8MHZ, MCP_16MHZ, etc. are defined
+#include <SPI.h>
 #define SVARV_PLATFORM_AVR
 #else
-    // Generic platform - assume MCP2515 support
-  #include <mcp_can.h>
-  #include <mcp_can_dfs.h>   // <<— add this so MCP_8MHZ, MCP_16MHZ, etc. are defined
-  #include <SPI.h>
+// Generic platform - assume MCP2515 support
+#include <mcp_can.h>
+#include <mcp_can_dfs.h> // <<— add this so MCP_8MHZ, MCP_16MHZ, etc. are defined
+#include <SPI.h>
 #define SVARV_PLATFORM_GENERIC
 #endif
 
 // Use std::map equivalent for different platforms
 #ifdef ARDUINO_ARCH_AVR
-    // AVR has limited memory - use simple array-based map
+// AVR has limited memory - use simple array-based map
 #define SVARV_MAX_MOTORS 8
-template<typename K, typename V>
-struct SimpleMap {
-    struct Pair { K key; V value; bool used; };
+template <typename K, typename V>
+struct SimpleMap
+{
+    struct Pair
+    {
+        K key;
+        V value;
+        bool used;
+    };
     Pair data[SVARV_MAX_MOTORS];
     int count;
 
-    SimpleMap() : count(0) {
-        for (int i = 0; i < SVARV_MAX_MOTORS; i++) {
+    SimpleMap() : count(0)
+    {
+        for (int i = 0; i < SVARV_MAX_MOTORS; i++)
+        {
             data[i].used = false;
         }
     }
 
-    V& operator[](const K& key) {
-        for (int i = 0; i < SVARV_MAX_MOTORS; i++) {
-            if (data[i].used && data[i].key == key) {
+    V &operator[](const K &key)
+    {
+        for (int i = 0; i < SVARV_MAX_MOTORS; i++)
+        {
+            if (data[i].used && data[i].key == key)
+            {
                 return data[i].value;
             }
         }
         // Find empty slot
-        for (int i = 0; i < SVARV_MAX_MOTORS; i++) {
-            if (!data[i].used) {
+        for (int i = 0; i < SVARV_MAX_MOTORS; i++)
+        {
+            if (!data[i].used)
+            {
                 data[i].key = key;
                 data[i].used = true;
                 count++;
@@ -135,18 +148,24 @@ struct SimpleMap {
         return data[0].value;
     }
 
-    bool find(const K& key) const {
-        for (int i = 0; i < SVARV_MAX_MOTORS; i++) {
-            if (data[i].used && data[i].key == key) {
+    bool find(const K &key) const
+    {
+        for (int i = 0; i < SVARV_MAX_MOTORS; i++)
+        {
+            if (data[i].used && data[i].key == key)
+            {
                 return true;
             }
         }
         return false;
     }
 
-    bool erase(const K& key) {
-        for (int i = 0; i < SVARV_MAX_MOTORS; i++) {
-            if (data[i].used && data[i].key == key) {
+    bool erase(const K &key)
+    {
+        for (int i = 0; i < SVARV_MAX_MOTORS; i++)
+        {
+            if (data[i].used && data[i].key == key)
+            {
                 data[i].used = false;
                 count--;
                 return true;
@@ -160,7 +179,7 @@ struct SimpleMap {
 };
 #else
 #include <map>
-template<typename K, typename V>
+template <typename K, typename V>
 using SimpleMap = std::map<K, V>;
 #endif
 
@@ -177,11 +196,10 @@ class SvarvMotionControl;
 // Universal sections
 // If we didn’t pull in mcp_can_dfs.h, define these so the constant is always available
 #ifndef MCP_8MHZ
-  #define MCP_8MHZ  2   // 8 MHz crystal
-  #define MCP_16MHZ 1   // 16 MHz crystal
-  #define MCP_20MHZ 0   // 20 MHz crystal
+#define MCP_8MHZ 2  // 8 MHz crystal
+#define MCP_16MHZ 1 // 16 MHz crystal
+#define MCP_20MHZ 0 // 20 MHz crystal
 #endif
-
 
 // ============================================================================
 // ENUMERATIONS AND CONSTANTS
@@ -190,28 +208,31 @@ class SvarvMotionControl;
 /**
  * @brief Motor control modes
  */
-typedef enum {
-    SVARV_MODE_IDLE = 0,        ///< Motor disabled, no control
-    SVARV_MODE_TORQUE = 1,      ///< Direct torque control (current control)
-    SVARV_MODE_VELOCITY = 2,    ///< Velocity control
-    SVARV_MODE_POSITION = 3,    ///< Position control
-    SVARV_MODE_CALIBRATION = 4  ///< Sensor and motor calibration
+typedef enum
+{
+    SVARV_MODE_IDLE = 0,       ///< Motor disabled, no control
+    SVARV_MODE_TORQUE = 1,     ///< Direct torque control (current control)
+    SVARV_MODE_VELOCITY = 2,   ///< Velocity control
+    SVARV_MODE_POSITION = 3,   ///< Position control
+    SVARV_MODE_CALIBRATION = 4 ///< Sensor and motor calibration
 } SvarvControlMode;
 
 /**
  * @brief Motor connection states
  */
-typedef enum {
-    SVARV_STATE_DISCONNECTED = 0,  ///< Motor not responding
-    SVARV_STATE_CONNECTING = 1,    ///< Attempting connection
-    SVARV_STATE_CONNECTED = 2,     ///< Connected and operational
-    SVARV_STATE_ERROR = 3          ///< Connected but in error state
+typedef enum
+{
+    SVARV_STATE_DISCONNECTED = 0, ///< Motor not responding
+    SVARV_STATE_CONNECTING = 1,   ///< Attempting connection
+    SVARV_STATE_CONNECTED = 2,    ///< Connected and operational
+    SVARV_STATE_ERROR = 3         ///< Connected but in error state
 } SvarvConnectionState;
 
 /**
  * @brief Error codes (matches firmware error_code_t)
  */
-typedef enum {
+typedef enum
+{
     SVARV_ERROR_NONE = 0,
     SVARV_ERROR_COMMAND_TIMEOUT = 1,
     SVARV_ERROR_OVER_CURRENT = 2,
@@ -232,7 +253,8 @@ typedef enum {
 /**
  * @brief PID controller types
  */
-typedef enum {
+typedef enum
+{
     SVARV_PID_POSITION = 0,
     SVARV_PID_VELOCITY = 1,
     SVARV_PID_CURRENT = 2
@@ -241,11 +263,12 @@ typedef enum {
 /**
  * @brief Supported hardware platforms
  */
-typedef enum {
-    SVARV_PLATFORM_AUTO = 0,    ///< Auto-detect platform
-    SVARV_PLATFORM_ESP32_BUILTIN = 1,  ///< ESP32 built-in CAN
-    SVARV_PLATFORM_STM32_BUILTIN = 2,  ///< STM32 built-in CAN
-    SVARV_PLATFORM_MCP2515 = 3         ///< MCP2515 external CAN controller
+typedef enum
+{
+    SVARV_PLATFORM_AUTO = 0,          ///< Auto-detect platform
+    SVARV_PLATFORM_ESP32_BUILTIN = 1, ///< ESP32 built-in CAN
+    SVARV_PLATFORM_STM32_BUILTIN = 2, ///< STM32 built-in CAN
+    SVARV_PLATFORM_MCP2515 = 3        ///< MCP2515 external CAN controller
 } SvarvPlatformType;
 
 // ============================================================================
@@ -255,23 +278,26 @@ typedef enum {
 /**
  * @brief PID controller parameters
  */
-struct SvarvPID {
-    float P = 0.0f;           ///< Proportional gain
-    float I = 0.0f;           ///< Integral gain
-    float D = 0.0f;           ///< Derivative gain
-    float output_limit = 0.0f; ///< Output limit
+struct SvarvPID
+{
+    float P = 0.0f;              ///< Proportional gain
+    float I = 0.0f;              ///< Integral gain
+    float D = 0.0f;              ///< Derivative gain
+    float output_limit = 0.0f;   ///< Output limit
     float integral_limit = 0.0f; ///< Integral windup limit
 
     SvarvPID() = default;
     SvarvPID(float p, float i, float d, float out_lim = 100.0f)
-        : P(p), I(i), D(d), output_limit(out_lim), integral_limit(out_lim) {
+        : P(p), I(i), D(d), output_limit(out_lim), integral_limit(out_lim)
+    {
     }
 };
 
 /**
  * @brief Motor status information
  */
-struct SvarvMotorStatus {
+struct SvarvMotorStatus
+{
     // Control state
     SvarvControlMode control_mode = SVARV_MODE_IDLE;
     bool enabled = false;
@@ -280,15 +306,15 @@ struct SvarvMotorStatus {
     float target_value = 0.0f;
 
     // Measured values
-    float position = 0.0f;        ///< Current position [rad]
-    float velocity = 0.0f;        ///< Current velocity [rad/s]
-    float current_q = 0.0f;       ///< Q-axis current [A]
-    float current_d = 0.0f;       ///< D-axis current [A]
-    float voltage_q = 0.0f;       ///< Q-axis voltage [V]
-    float voltage_d = 0.0f;       ///< D-axis voltage [V]
+    float position = 0.0f;  ///< Current position [rad]
+    float velocity = 0.0f;  ///< Current velocity [rad/s]
+    float current_q = 0.0f; ///< Q-axis current [A]
+    float current_d = 0.0f; ///< D-axis current [A]
+    float voltage_q = 0.0f; ///< Q-axis voltage [V]
+    float voltage_d = 0.0f; ///< D-axis voltage [V]
 
     // Diagnostics
-    uint16_t loop_time_us = 0;    ///< Control loop time [μs]
+    uint16_t loop_time_us = 0; ///< Control loop time [μs]
     SvarvErrorCode error_code = SVARV_ERROR_NONE;
     uint16_t error_count = 0;
 
@@ -301,7 +327,8 @@ struct SvarvMotorStatus {
 /**
  * @brief Motor configuration parameters
  */
-struct SvarvMotorConfig {
+struct SvarvMotorConfig
+{
     // System settings
     uint8_t node_id = 0;
     SvarvControlMode default_mode = SVARV_MODE_IDLE;
@@ -313,7 +340,7 @@ struct SvarvMotorConfig {
 
     // Encoder settings
     uint16_t encoder_resolution = 4096;
-    float encoder_offset = 0.0f;      ///< [rad]
+    float encoder_offset = 0.0f; ///< [rad]
     bool encoder_reversed = false;
 
     // PID controllers
@@ -322,10 +349,15 @@ struct SvarvMotorConfig {
     SvarvPID current_pid = SvarvPID(3.0f, 300.0f, 0.0f, 12.0f);
 
     // Safety limits
-    float velocity_limit = 15.0f;     ///< [rad/s]
-    float current_limit = 5.0f;       ///< [A]
-    float voltage_limit = 5.0f;       ///< [V]
-    uint16_t command_timeout = 1000;  ///< [ms]
+    float velocity_limit = 15.0f;    ///< [rad/s]
+    float current_limit = 5.0f;      ///< [A]
+    float voltage_limit = 5.0f;      ///< [V]
+    uint16_t command_timeout = 1000; ///< [ms]
+
+    // NEW: Physical position limits
+    float position_limit_min = -10.0f;    ///< Minimum position limit [rad]
+    float position_limit_max = 10.0f;     ///< Maximum position limit [rad]
+    bool position_limits_enabled = false; ///< Enable position limits
 
     // Telemetry settings
     uint16_t telemetry_interval = 100; ///< [ms]
@@ -335,7 +367,8 @@ struct SvarvMotorConfig {
 /**
  * @brief Platform-specific configuration
  */
-struct SvarvPlatformConfig {
+struct SvarvPlatformConfig
+{
     SvarvPlatformType platform = SVARV_PLATFORM_AUTO;
 
     // ESP32 specific
@@ -343,7 +376,7 @@ struct SvarvPlatformConfig {
     int esp32_rx_pin = 22;
 
     // STM32 specific
-    int stm32_can_instance = 1;  // CAN1 or CAN2
+    int stm32_can_instance = 1; // CAN1 or CAN2
 
     // MCP2515 specific
     int mcp2515_cs_pin = 10;
@@ -363,7 +396,7 @@ struct SvarvPlatformConfig {
  * @param motor Reference to the motor that was updated
  * @param status New status information
  */
-typedef std::function<void(SvarvMotor& motor, const SvarvMotorStatus& status)> SvarvStatusCallback;
+typedef std::function<void(SvarvMotor &motor, const SvarvMotorStatus &status)> SvarvStatusCallback;
 
 /**
  * @brief Error callback
@@ -371,7 +404,7 @@ typedef std::function<void(SvarvMotor& motor, const SvarvMotorStatus& status)> S
  * @param error_code Error code
  * @param error_message Human-readable error description
  */
-typedef std::function<void(SvarvMotor& motor, SvarvErrorCode error_code, const String& error_message)> SvarvErrorCallback;
+typedef std::function<void(SvarvMotor &motor, SvarvErrorCode error_code, const String &error_message)> SvarvErrorCallback;
 
 /**
  * @brief Connection state change callback
@@ -379,7 +412,7 @@ typedef std::function<void(SvarvMotor& motor, SvarvErrorCode error_code, const S
  * @param old_state Previous connection state
  * @param new_state New connection state
  */
-typedef std::function<void(SvarvMotor& motor, SvarvConnectionState old_state, SvarvConnectionState new_state)> SvarvConnectionCallback;
+typedef std::function<void(SvarvMotor &motor, SvarvConnectionState old_state, SvarvConnectionState new_state)> SvarvConnectionCallback;
 
 // ============================================================================
 // PLATFORM ABSTRACTION LAYER
@@ -388,7 +421,8 @@ typedef std::function<void(SvarvMotor& motor, SvarvConnectionState old_state, Sv
 /**
  * @brief CAN message structure (platform-independent)
  */
-struct SvarvCANMessage {
+struct SvarvCANMessage
+{
     uint32_t id;
     uint8_t length;
     uint8_t data[8];
@@ -399,7 +433,8 @@ struct SvarvCANMessage {
 /**
  * @brief Platform abstraction layer for CAN communication
  */
-class SvarvCANInterface {
+class SvarvCANInterface
+{
 public:
     virtual ~SvarvCANInterface() {}
 
@@ -408,21 +443,21 @@ public:
      * @param config Platform configuration
      * @return true if successful
      */
-    virtual bool begin(const SvarvPlatformConfig& config) = 0;
+    virtual bool begin(const SvarvPlatformConfig &config) = 0;
 
     /**
      * @brief Send CAN message
      * @param msg Message to send
      * @return true if successful
      */
-    virtual bool sendMessage(const SvarvCANMessage& msg) = 0;
+    virtual bool sendMessage(const SvarvCANMessage &msg) = 0;
 
     /**
      * @brief Receive CAN message
      * @param msg Output message buffer
      * @return true if message received
      */
-    virtual bool receiveMessage(SvarvCANMessage& msg) = 0;
+    virtual bool receiveMessage(SvarvCANMessage &msg) = 0;
 
     /**
      * @brief Check if CAN interface is available/healthy
@@ -439,48 +474,51 @@ public:
 
 // Platform-specific CAN implementations
 #ifdef SVARV_PLATFORM_ESP32
-class SvarvCANInterface_ESP32 : public SvarvCANInterface {
+class SvarvCANInterface_ESP32 : public SvarvCANInterface
+{
 private:
     SvarvPlatformConfig config_;
 
 public:
-    bool begin(const SvarvPlatformConfig& config) override;
-    bool sendMessage(const SvarvCANMessage& msg) override;
-    bool receiveMessage(SvarvCANMessage& msg) override;
+    bool begin(const SvarvPlatformConfig &config) override;
+    bool sendMessage(const SvarvCANMessage &msg) override;
+    bool receiveMessage(SvarvCANMessage &msg) override;
     bool isAvailable() override;
     String getPlatformName() override { return "ESP32 Built-in CAN"; }
 };
 #endif
 
 #ifdef SVARV_PLATFORM_STM32
-class SvarvCANInterface_STM32 : public SvarvCANInterface {
+class SvarvCANInterface_STM32 : public SvarvCANInterface
+{
 private:
     SvarvPlatformConfig config_;
-    STM32_CAN* can_;
+    STM32_CAN *can_;
 
 public:
     SvarvCANInterface_STM32();
     ~SvarvCANInterface_STM32();
-    bool begin(const SvarvPlatformConfig& config) override;
-    bool sendMessage(const SvarvCANMessage& msg) override;
-    bool receiveMessage(SvarvCANMessage& msg) override;
+    bool begin(const SvarvPlatformConfig &config) override;
+    bool sendMessage(const SvarvCANMessage &msg) override;
+    bool receiveMessage(SvarvCANMessage &msg) override;
     bool isAvailable() override;
     String getPlatformName() override { return "STM32 Built-in CAN"; }
 };
 #endif
 
 #if defined(SVARV_PLATFORM_AVR) || defined(SVARV_PLATFORM_GENERIC)
-class SvarvCANInterface_MCP2515 : public SvarvCANInterface {
+class SvarvCANInterface_MCP2515 : public SvarvCANInterface
+{
 private:
     SvarvPlatformConfig config_;
-    MCP_CAN* can_;
+    MCP_CAN *can_;
 
 public:
     SvarvCANInterface_MCP2515();
     ~SvarvCANInterface_MCP2515();
-    bool begin(const SvarvPlatformConfig& config) override;
-    bool sendMessage(const SvarvCANMessage& msg) override;
-    bool receiveMessage(SvarvCANMessage& msg) override;
+    bool begin(const SvarvPlatformConfig &config) override;
+    bool sendMessage(const SvarvCANMessage &msg) override;
+    bool receiveMessage(SvarvCANMessage &msg) override;
     bool isAvailable() override;
     String getPlatformName() override { return "MCP2515 External CAN"; }
 };
@@ -499,7 +537,8 @@ public:
  *
  * @note Motors are created and managed by SvarvMotionControl. Do not instantiate directly.
  */
-class SvarvMotor {
+class SvarvMotor
+{
     friend class SvarvMotionControl;
 
 public:
@@ -570,7 +609,7 @@ public:
      * @param pid PID parameters
      * @return true if command sent successfully
      */
-    bool setPID(SvarvPIDType pid_type, const SvarvPID& pid);
+    bool setPID(SvarvPIDType pid_type, const SvarvPID &pid);
 
     /**
      * @brief Set individual PID gain
@@ -609,6 +648,59 @@ public:
      */
     bool factoryReset();
 
+    /**
+     * @brief Set physical position limits
+     * @param min_limit Minimum position limit [rad]
+     * @param max_limit Maximum position limit [rad]
+     * @param enable Enable limits immediately (default: true)
+     * @return true if command sent successfully
+     */
+    bool setPositionLimits(float min_limit, float max_limit, bool enable = true);
+
+    /**
+     * @brief Enable position limits
+     * @return true if command sent successfully
+     */
+    bool enablePositionLimits();
+
+    /**
+     * @brief Disable position limits
+     * @return true if command sent successfully
+     */
+    bool disablePositionLimits();
+
+    /**
+     * @brief Check if position limits are enabled
+     * @return true if limits are enabled
+     */
+    bool arePositionLimitsEnabled() const { return config_.position_limits_enabled; }
+
+    /**
+     * @brief Get minimum position limit
+     * @return Minimum position limit [rad]
+     */
+    float getMinPositionLimit() const { return config_.position_limit_min; }
+
+    /**
+     * @brief Get maximum position limit
+     * @return Maximum position limit [rad]
+     */
+    float getMaxPositionLimit() const { return config_.position_limit_max; }
+
+    /**
+     * @brief Check if a position is within limits
+     * @param position Position to check [rad]
+     * @return true if position is within limits
+     */
+    bool isPositionWithinLimits(float position) const;
+
+    /**
+     * @brief Constrain position to limits (if enabled)
+     * @param position Desired position [rad]
+     * @return Constrained position [rad]
+     */
+    float constrainToLimits(float position) const;
+
     // ========================================================================
     // STATUS AND MONITORING
     // ========================================================================
@@ -617,7 +709,7 @@ public:
      * @brief Get current motor status
      * @return Motor status structure
      */
-    const SvarvMotorStatus& getStatus() const { return status_; }
+    const SvarvMotorStatus &getStatus() const { return status_; }
 
     /**
      * @brief Get current position
@@ -708,7 +800,7 @@ public:
      * @brief Get motor configuration
      * @return Configuration structure
      */
-    const SvarvMotorConfig& getConfig() const { return config_; }
+    const SvarvMotorConfig &getConfig() const { return config_; }
 
     // ========================================================================
     // CALLBACK REGISTRATION
@@ -734,17 +826,17 @@ public:
 
 private:
     // Private constructor - only SvarvMotionControl can create motors
-    SvarvMotor(uint8_t node_id, SvarvMotionControl* controller);
+    SvarvMotor(uint8_t node_id, SvarvMotionControl *controller);
 
     // Internal methods
-    bool sendCommand(uint8_t cmd, const uint8_t* data = nullptr, uint8_t len = 0);
-    bool sendConfig(uint8_t cmd, const uint8_t* data, uint8_t len);
-    void updateStatus(const SvarvMotorStatus& new_status);
+    bool sendCommand(uint8_t cmd, const uint8_t *data = nullptr, uint8_t len = 0);
+    bool sendConfig(uint8_t cmd, const uint8_t *data, uint8_t len);
+    void updateStatus(const SvarvMotorStatus &new_status);
     void setConnectionState(SvarvConnectionState state);
     void handleTimeout();
 
     // Member variables
-    SvarvMotionControl* controller_;
+    SvarvMotionControl *controller_;
     SvarvMotorConfig config_;
     SvarvMotorStatus status_;
     SvarvControlMode last_active_mode_;
@@ -791,7 +883,8 @@ private:
  * svarv.begin(1000000, 10, 2, MCP_8MHZ); // CS pin 10, INT pin 2, 8MHz crystal
  * @endcode
  */
-class SvarvMotionControl {
+class SvarvMotionControl
+{
     friend class SvarvMotor;
 
 public:
@@ -856,7 +949,7 @@ public:
      * @param config Platform-specific configuration
      * @return true if initialization successful
      */
-    bool begin(const SvarvPlatformConfig& config);
+    bool begin(const SvarvPlatformConfig &config);
 
     /**
      * @brief Add a motor to the control system
@@ -864,7 +957,7 @@ public:
      * @return Motor object for control operations
      * @note If motor with this node_id already exists, returns existing motor
      */
-    SvarvMotor& addMotor(uint8_t node_id);
+    SvarvMotor &addMotor(uint8_t node_id);
 
     /**
      * @brief Remove a motor from the control system
@@ -880,22 +973,20 @@ public:
      */
     bool isNodeIdAvailable(uint8_t node_id);
 
-    
     int configureMotorRange(uint8_t start_id = 1, uint8_t end_id = 10, bool force_reconfigure = false);
-
 
     /**
      * @brief Get motor by node ID
      * @param node_id CAN node ID
      * @return Pointer to motor object, or nullptr if not found
      */
-    SvarvMotor* getMotor(uint8_t node_id);
+    SvarvMotor *getMotor(uint8_t node_id);
 
     /**
      * @brief Get all motors
      * @return Vector of pointers to all motors
      */
-    std::vector<SvarvMotor*> getAllMotors();
+    std::vector<SvarvMotor *> getAllMotors();
 
     // ========================================================================
     // MAIN CONTROL LOOP
@@ -955,10 +1046,7 @@ public:
      */
     bool configureSingleMotor(uint8_t target_id);
 
-
     std::vector<uint8_t> scanForUnconfiguredMotors(unsigned long timeout_ms = 8000);
-
-
 
     // ========================================================================
     // SYSTEM STATUS AND DIAGNOSTICS
@@ -976,7 +1064,7 @@ public:
      * @param messages_received Output: Total messages received
      * @param errors Output: Total CAN errors
      */
-    void getCANStatistics(uint32_t& messages_sent, uint32_t& messages_received, uint32_t& errors) const;
+    void getCANStatistics(uint32_t &messages_sent, uint32_t &messages_received, uint32_t &errors) const;
 
     /**
      * @brief Check if CAN bus is healthy
@@ -1021,23 +1109,23 @@ public:
 private:
     // Internal CAN communication
     bool sendCANMessage(uint8_t node_id, uint8_t function_id, uint8_t cmd,
-        const uint8_t* data = nullptr, uint8_t len = 0);
+                        const uint8_t *data = nullptr, uint8_t len = 0);
     void processIncomingMessages();
-    void handleResponseMessage(uint8_t node_id, const SvarvCANMessage& msg);
-    void handleTelemetryMessage(uint8_t node_id, const SvarvCANMessage& msg);
-    void handleErrorMessage(uint8_t node_id, const SvarvCANMessage& msg);
+    void handleResponseMessage(uint8_t node_id, const SvarvCANMessage &msg);
+    void handleTelemetryMessage(uint8_t node_id, const SvarvCANMessage &msg);
+    void handleErrorMessage(uint8_t node_id, const SvarvCANMessage &msg);
 
     // Platform detection and setup
     SvarvPlatformType detectPlatform();
-    SvarvCANInterface* createCANInterface(SvarvPlatformType platform);
+    SvarvCANInterface *createCANInterface(SvarvPlatformType platform);
 
     // Internal motor management
     void updateMotorTimeouts();
-    void debugPrint(const String& message);
+    void debugPrint(const String &message);
 
     // Member variables
-    SimpleMap<uint8_t, SvarvMotor*> motors_;
-    SvarvCANInterface* can_interface_;
+    SimpleMap<uint8_t, SvarvMotor *> motors_;
+    SvarvCANInterface *can_interface_;
     SvarvPlatformConfig platform_config_;
     bool initialized_;
     bool debug_enabled_;
