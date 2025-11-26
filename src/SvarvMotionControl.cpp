@@ -266,8 +266,20 @@ bool SvarvCANInterface_MCP2515::isAvailable() {
 #endif // SVARV_PLATFORM_AVR || SVARV_PLATFORM_GENERIC
 
 // ============================================================================
-// UTILITY FUNCTIONS IMPLEMENTATION
+// Global FUNCTIONS IMPLEMENTATION
 // ============================================================================
+
+// Define the global variable (definition, not declaration)
+bool debug_enabled_ = false; // Initialize to false by default
+
+// The debugPrint function implementation (keep as is)
+void debugPrint(const String& message) {
+    if (debug_enabled_) {
+        Serial.println("[Svarv] " + message);
+    }
+}
+
+
 
 String svarvModeToString(SvarvControlMode mode) {
     switch (mode) {
@@ -703,7 +715,7 @@ void SvarvMotor::handleTimeout() {
 // ============================================================================
 
 SvarvMotionControl::SvarvMotionControl()
-    : can_interface_(nullptr), initialized_(false), debug_enabled_(false), 
+    : can_interface_(nullptr), initialized_(false), 
       messages_sent_(0), messages_received_(0), can_errors_(0), 
       last_update_time_(0), last_scan_time_(0) {
 }
@@ -1418,8 +1430,3 @@ void SvarvMotionControl::updateMotorTimeouts() {
     }
 }
 
-void SvarvMotionControl::debugPrint(const String& message) {
-    if (debug_enabled_) {
-        Serial.println("[Svarv] " + message);
-    }
-}

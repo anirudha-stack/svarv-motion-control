@@ -202,6 +202,14 @@ class SvarvMotionControl;
 #endif
 
 // ============================================================================
+// Global Functions AND CONSTANTS
+// ============================================================================
+
+extern bool debug_enabled_;
+
+void debugPrint(const String &message);
+
+// ============================================================================
 // ENUMERATIONS AND CONSTANTS
 // ============================================================================
 
@@ -1099,13 +1107,11 @@ public:
      * @param callback Function to call when any motor connection changes
      */
     void onAnyConnectionChange(SvarvConnectionCallback callback) { global_connection_callback_ = callback; }
-
     /**
      * @brief Enable debug output
      * @param enable true to enable debug output to Serial
      */
     void enableDebug(bool enable = true) { debug_enabled_ = enable; }
-
 private:
     // Internal CAN communication
     bool sendCANMessage(uint8_t node_id, uint8_t function_id, uint8_t cmd,
@@ -1121,14 +1127,13 @@ private:
 
     // Internal motor management
     void updateMotorTimeouts();
-    void debugPrint(const String &message);
+
 
     // Member variables
     SimpleMap<uint8_t, SvarvMotor *> motors_;
     SvarvCANInterface *can_interface_;
     SvarvPlatformConfig platform_config_;
     bool initialized_;
-    bool debug_enabled_;
 
     // CAN statistics
     uint32_t messages_sent_;

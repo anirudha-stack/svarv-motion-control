@@ -78,6 +78,15 @@ svarvModeToString	KEYWORD2
 svarvErrorToString	KEYWORD2
 svarvConnectionStateToString	KEYWORD2
 
+setPositionLimits	KEYWORD2
+enablePositionLimits	KEYWORD2
+disablePositionLimits	KEYWORD2
+arePositionLimitsEnabled	KEYWORD2
+getMinPositionLimit	KEYWORD2
+getMaxPositionLimit	KEYWORD2
+isPositionWithinLimits	KEYWORD2
+constrainToLimits	KEYWORD2
+
 #######################################
 # Constants (LITERAL1)
 #######################################
