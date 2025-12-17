@@ -887,7 +887,11 @@ SvarvMotor& SvarvMotionControl::addMotor(uint8_t node_id) {
     
     // Request initial status (but don't assume it will respond immediately)
     motor->requestStatusUpdate();
-    
+    // 🔥 Ask motor for EEPROM config
+    sendCANMessage(node_id, CAN_FUNCTION_QUERY, CMD_QUERY_CONFIG);
+
+    // 🔥 Ask motor for EEPROM PID values
+    sendCANMessage(node_id, CAN_FUNCTION_QUERY, CMD_QUERY_PID_VALUES);    
     return *motor;
 }
 
@@ -1338,6 +1342,65 @@ void SvarvMotionControl::handleResponseMessage(uint8_t node_id, const SvarvCANMe
                 
                 motor->updateStatus(new_status);
             }
+        }if (cmd == CMD_QUERY_PID_VALUES && msg.length >= 6) {
+
+            uint8_t pid_sub_id = msg.data[1];
+            float value;
+            memcpy(&value, &msg.data[2], 4);
+
+            SvarvMotor* motor = getMotor(node_id);
+            if (!motor) return;
+
+            switch (pid_sub_id) {
+
+                // -------- POSITION PID --------
+                case 1:  // Position P
+                    motor->config_.position_pid.P = value;
+                    break;
+
+                case 2:  // Position I
+                    motor->config_.position_pid.I = value;
+                    break;
+
+                case 3:  // Position D
+                    motor->config_.position_pid.D = value;
+                    break;
+
+                // -------- VELOCITY PID --------
+                case 4:  // Velocity P
+                    motor->config_.velocity_pid.P = value;
+                    break;
+
+                case 5:  // Velocity I
+                    motor->config_.velocity_pid.I = value;
+                    break;
+
+                case 6:  // Velocity D
+                    motor->config_.velocity_pid.D = value;
+                    break;
+
+                // -------- CURRENT PID --------
+                case 7:  // Current P
+                    motor->config_.current_pid.P = value;
+                    break;
+
+                case 8:  // Current I
+                    motor->config_.current_pid.I = value;
+                    break;
+
+                case 9:  // Current D
+                    motor->config_.current_pid.D = value;
+                    break;
+
+                default:
+                    break;
+            }
+
+            // OPTIONAL DEBUG
+            debugPrint("PID updated from EEPROM (sub-id " + String(pid_sub_id) +
+                    "): " + String(value, 6));
+
+            return; // 🔴 IMPORTANT: stop further processing
         }
     }
 }
